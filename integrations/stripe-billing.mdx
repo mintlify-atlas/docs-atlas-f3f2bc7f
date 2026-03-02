@@ -22,14 +22,13 @@ Before starting, you'll need:
 
 ## Subscription Tiers
 
-SubPirate offers four subscription tiers:
+SubPirate offers three subscription tiers:
 
 | Tier | Monthly Price | Annual Price | Features |
 |------|---------------|--------------|----------|
-| **Starter** | $19.99/mo | TBD | Basic features, limited quotas |
-| **Creator** | $37.99/mo | TBD | Enhanced features, higher quotas |
-| **Pro** | $67.99/mo | TBD | Full features, professional quotas |
-| **Agency** | Contact Us | Contact Us | Enterprise features (archived in Stripe) |
+| **Essentials** | $29/mo | $290/year | 10 analyses/month, 1 Reddit account, 2 campaigns, 3 projects |
+| **Professional** | $79/mo | $790/year | 50 analyses/month, 5 Reddit accounts, 10 campaigns, 10 projects, AI scheduler, advanced dashboard, team access |
+| **Agency** | $199/mo | $1,990/year | Unlimited analyses, accounts, campaigns, projects, AI scheduler, advanced dashboard, team access |
 
 ## Stripe Setup
 
@@ -43,26 +42,26 @@ SubPirate offers four subscription tiers:
   <Step title="Create Products and Prices">
     Create three products in Stripe Dashboard → **Products**:
     
-    ### Starter Product
-    - **Name:** SubPirate Starter
-    - **Metadata:** `tier` = `starter`
+    ### Essentials Product
+    - **Name:** SubPirate Essentials
+    - **Metadata:** `tier` = `essentials`
     - **Prices:**
-      - Monthly: $19.99 recurring
-      - Annual: TBD recurring
+      - Monthly: $29.00 recurring
+      - Annual: $290.00 recurring
     
-    ### Creator Product
-    - **Name:** SubPirate Creator
-    - **Metadata:** `tier` = `creator`
+    ### Professional Product
+    - **Name:** SubPirate Professional
+    - **Metadata:** `tier` = `professional`
     - **Prices:**
-      - Monthly: $37.99 recurring
-      - Annual: TBD recurring
+      - Monthly: $79.00 recurring
+      - Annual: $790.00 recurring
     
-    ### Pro Product
-    - **Name:** SubPirate Pro
-    - **Metadata:** `tier` = `pro`
+    ### Agency Product
+    - **Name:** SubPirate Agency
+    - **Metadata:** `tier` = `agency`
     - **Prices:**
-      - Monthly: $67.99 recurring
-      - Annual: TBD recurring
+      - Monthly: $199.00 recurring
+      - Annual: $1,990.00 recurring
     
     <Warning>
       Add `tier` metadata to **products** and `plan_tier` metadata to **prices**. The webhook processor uses this to map Stripe subscriptions to SubPirate plans.
@@ -98,12 +97,12 @@ STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 
 # Price IDs (server-only)
-STRIPE_PRICE_STARTER_MONTHLY=price_...
-STRIPE_PRICE_STARTER_ANNUAL=price_...
-STRIPE_PRICE_CREATOR_MONTHLY=price_...
-STRIPE_PRICE_CREATOR_ANNUAL=price_...
-STRIPE_PRICE_PRO_MONTHLY=price_...
-STRIPE_PRICE_PRO_ANNUAL=price_...
+STRIPE_PRICE_ESSENTIALS_MONTHLY=price_...
+STRIPE_PRICE_ESSENTIALS_ANNUAL=price_...
+STRIPE_PRICE_PROFESSIONAL_MONTHLY=price_...
+STRIPE_PRICE_PROFESSIONAL_ANNUAL=price_...
+STRIPE_PRICE_AGENCY_MONTHLY=price_...
+STRIPE_PRICE_AGENCY_ANNUAL=price_...
 ```
 
 <Warning>
