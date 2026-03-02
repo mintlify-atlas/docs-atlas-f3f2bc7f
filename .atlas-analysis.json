@@ -1,0 +1,126 @@
+{
+  "projectType": "saas",
+  "projectName": "SubPirate Pro",
+  "projectDescription": "A Reddit marketing analysis platform for analyzing subreddits, organizing projects, and running automated posting campaigns.",
+  "theme": "aspen",
+  "primaryColor": "#FF4500",
+  "lightColor": "#FF6B35",
+  "darkColor": "#D93900",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "environment-setup"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/subreddit-analysis",
+              "features/projects",
+              "features/campaigns",
+              "features/reddit-accounts"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/reddit-oauth",
+              "integrations/openrouter-ai",
+              "integrations/stripe-billing"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/local-development",
+              "deployment/vercel",
+              "deployment/supabase"
+            ]
+          },
+          {
+            "group": "Security & Compliance",
+            "pages": [
+              "security/authentication",
+              "security/data-encryption",
+              "security/gdpr-compliance"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "api/overview",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Reddit API",
+            "pages": [
+              "api/reddit/oauth",
+              "api/reddit/accounts",
+              "api/reddit/public-proxy"
+            ]
+          },
+          {
+            "group": "Analysis",
+            "pages": [
+              "api/analysis/subreddit",
+              "api/analysis/openrouter"
+            ]
+          },
+          {
+            "group": "Campaigns",
+            "pages": [
+              "api/campaigns/overview",
+              "api/campaigns/runs",
+              "api/campaigns/content"
+            ]
+          },
+          {
+            "group": "Admin",
+            "pages": [
+              "api/admin/users",
+              "api/admin/health"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "AI-powered subreddit analysis using OpenRouter LLM",
+    "Multi-account Reddit OAuth integration with encrypted token storage",
+    "Project-based subreddit organization with role-based access control",
+    "Automated posting campaigns with scheduling and content versioning",
+    "Real-time analytics dashboard with heatmaps and engagement metrics",
+    "Stripe subscription billing with tiered pricing",
+    "Row-level security (RLS) for multi-tenant data isolation",
+    "Dual-server architecture (Express + Vercel Serverless)"
+  ],
+  "publicApiSurface": [
+    "POST /api/reddit/oauth/exchange - Exchange Reddit OAuth code for tokens",
+    "GET /api/reddit/accounts - List connected Reddit accounts",
+    "GET /api/reddit/public - Proxy for public Reddit JSON endpoints",
+    "POST /api/analyze/:subreddit - Analyze subreddit marketing potential",
+    "POST /api/openrouter/analyze-subreddit - Direct OpenRouter analysis endpoint",
+    "GET /api/campaigns - List campaigns with role-based filtering",
+    "POST /api/campaigns - Create new campaign",
+    "GET /api/campaigns/:id/runs - Get campaign run history",
+    "POST /api/campaigns/:id/run - Manually trigger campaign run",
+    "GET /api/plans - Get subscription plan information",
+    "POST /api/stripe/create-checkout-session - Initialize Stripe checkout",
+    "POST /api/stripe/webhook - Handle Stripe webhook events",
+    "GET /api/health - Server health check endpoint"
+  ]
+}
