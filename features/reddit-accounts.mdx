@@ -1,0 +1,474 @@
+---
+title: "Reddit Accounts"
+description: "Connect and manage multiple Reddit accounts with OAuth, track karma, and monitor post history"
+---
+
+Connect your Reddit accounts to SubPirate Pro using secure OAuth authentication. Once connected, you can use these accounts for automated posting campaigns, track karma and post statistics, and manage account health.
+
+## Connecting Reddit Accounts
+
+SubPirate Pro uses Reddit's official OAuth 2.0 flow to connect accounts securely:
+
+<Steps>
+  <Step title="Navigate to Reddit Accounts">
+    From the main menu, go to the Reddit Accounts page. You'll see all your connected accounts or an empty state if none are connected yet.
+  </Step>
+  
+  <Step title="Click Connect Account">
+    Click the "Connect Account" button in the header.
+  </Step>
+  
+  <Step title="Authorize on Reddit">
+    You're redirected to Reddit's official authorization page. Log in to the Reddit account you want to connect.
+    
+    SubPirate Pro requests the following permissions:
+    - **identity**: Read your username and account info
+    - **submit**: Create posts on your behalf
+    - **read**: Read posts and comments
+    - **history**: Access your post history
+    
+    Click "Allow" to authorize SubPirate Pro.
+  </Step>
+  
+  <Step title="Automatic Import">
+    After authorization:
+    - You're redirected back to SubPirate Pro
+    - The account is saved with encrypted OAuth tokens
+    - Basic info is imported: username, karma, avatar
+    - Your account appears in the Reddit Accounts list
+  </Step>
+</Steps>
+
+<Info>
+  OAuth tokens are encrypted using AES-256-GCM and stored securely. SubPirate Pro never sees or stores your Reddit password.
+</Info>
+
+## Account Dashboard
+
+Each connected account displays:
+
+### Account Card Header
+
+- **Avatar**: Profile picture (from Reddit or custom uploaded)
+- **Username**: Clickable link to your Reddit profile (u/username)
+- **Badges**:
+  - **Premium**: Gold badge if you have Reddit Premium
+  - **Mod**: Green badge if you moderate any subreddits
+  - **Verified**: Blue checkmark if email verified
+
+### Account Statistics
+
+<Card title="Karma" icon="star">
+  Total karma score with breakdown tooltip:
+  - Link Karma
+  - Comment Karma
+  - Awardee Karma
+  - Awarder Karma
+  
+  Formatted as 1.2M, 45.3K, etc. for readability.
+</Card>
+
+<Card title="Total Posts" icon="message">
+  Number of posts in your history (up to last 100 fetched).
+</Card>
+
+<Card title="Posts Today" icon="activity">
+  Number of posts made in the last 24 hours. Updates when account data is refreshed.
+  
+  - Green indicator if > 0 posts today
+  - Gray indicator if 0 posts today
+</Card>
+
+### Action Buttons
+
+**Expand/Collapse**
+Click the chevron icon to view or hide the account's post history.
+
+**Refresh**
+- Manually refresh account data
+- Updates karma, post counts, and fetches latest posts
+- Shown as spinning icon while refreshing
+
+**Delete**
+- Remove account from SubPirate Pro
+- Revokes OAuth tokens
+- Account can be reconnected later if needed
+
+## Account Avatars
+
+### Default Avatar
+
+When you connect an account:
+- If Reddit provides an avatar URL, it's used automatically
+- Otherwise, a unique generated avatar is created based on the username
+
+### Custom Avatar Upload
+
+<Steps>
+  <Step title="Hover Over Avatar">
+    Hover over the account avatar. Upload and delete icons appear.
+  </Step>
+  
+  <Step title="Click Upload Icon">
+    Click the upload icon and select an image file from your device.
+    
+    **Requirements**:
+    - Image file (JPEG, PNG, GIF, WebP)
+    - Maximum size: 2MB
+    - Square images work best (will be cropped to fit)
+  </Step>
+  
+  <Step title="Upload and Replace">
+    The image is uploaded to SubPirate Pro's storage and replaces the existing avatar.
+    
+    Old avatar is automatically deleted from storage.
+  </Step>
+</Steps>
+
+### Removing Custom Avatar
+
+<Steps>
+  <Step title="Hover Over Avatar">
+    Hover over an account with a custom avatar.
+  </Step>
+  
+  <Step title="Click Delete Icon">
+    Click the X icon to remove the custom avatar.
+  </Step>
+  
+  <Step title="Revert to Default">
+    The custom avatar is deleted, and the account reverts to the Reddit-provided avatar or generated avatar.
+  </Step>
+</Steps>
+
+## Post History
+
+Expand any account to view post history with two tabs:
+
+### Most Recent Posts
+
+Shows the last posts made by this account (up to 100):
+
+**Each post displays:**
+- **Thumbnail**: Post image or subreddit icon
+- **Title**: Post title (clickable to Reddit)
+- **Upvotes**: Score (upvotes minus downvotes)
+- **Comments**: Number of comments
+- **Date**: When the post was created
+- **Subreddit**: Which subreddit (r/subredditname)
+
+Click any post to open it on Reddit in a new tab.
+
+### Top Posts
+
+Shows the account's top-scoring posts (sorted by score):
+
+- Same information as recent posts
+- Sorted by highest score first
+- Useful for understanding what content performs well
+- Identifies your most successful posts for reference
+
+### Refreshing Post Data
+
+**Automatic Refresh**
+On page load, accounts are batch-refreshed in the background:
+- Processes 2 accounts at a time
+- 3-second delay between batches
+- Prevents rate limiting
+- Accounts currently being viewed are skipped
+
+**Manual Refresh**
+Click the "Refresh" button in the expanded post view:
+- Clears cached post data
+- Fetches fresh posts from Reddit
+- Updates karma and post counts
+- Shows refreshing indicator
+
+**Cache Duration**
+Post data is cached in your browser for 5 minutes:
+- Viewing posts within 5 minutes uses cached data (instant)
+- After 5 minutes, data is refetched automatically
+- Cache age displayed in the post header ("Cached 2 min ago")
+
+## Using Accounts in Campaigns
+
+Connected accounts can be selected as posting sources in campaigns:
+
+### Account Selection
+
+<Steps>
+  <Step title="Create or Edit Campaign">
+    Navigate to a campaign's Accounts tab.
+  </Step>
+  
+  <Step title="Select Accounts">
+    Check the boxes next to accounts you want to use for this campaign.
+  </Step>
+  
+  <Step title="Save Assignments">
+    Click "Save Assignments". The campaign now has access to these accounts for posting.
+  </Step>
+</Steps>
+
+### Account Health in Campaigns
+
+Once an account is used in a campaign, its health status is tracked:
+
+<Card title="Healthy" icon="check">
+  **Status**: Green
+  
+  Account is posting successfully with no recent failures.
+  
+  - Consecutive failures: 0
+  - Can post without restrictions
+</Card>
+
+<Card title="Warning" icon="alert-triangle">
+  **Status**: Yellow
+  
+  1-2 consecutive posting failures detected.
+  
+  - Posting continues normally
+  - Watch for recurring issues
+  - May escalate to Error if failures continue
+</Card>
+
+<Card title="Error" icon="x">
+  **Status**: Orange
+  
+  2+ consecutive failures.
+  
+  - Posting continues but with caution
+  - Review error messages in campaign run logs
+  - Fix underlying issues to prevent disabling
+</Card>
+
+<Card title="Disabled" icon="ban">
+  **Status**: Red
+  
+  3+ consecutive failures. Account is temporarily disabled.
+  
+  **Cooldown periods:**
+  - 3 failures: 5 minutes
+  - 4 failures: 30 minutes
+  - 5+ failures: 120 minutes
+  
+  After cooldown expires, the account is re-enabled automatically. A successful post resets the failure count to 0.
+</Card>
+
+## Account Limits and Best Practices
+
+### Reddit Rate Limits
+
+Reddit imposes API rate limits:
+
+- **OAuth rate limit**: 60 requests per minute per account
+- **Posting rate limit**: ~5-10 posts per day per account (varies by subreddit and account age)
+- **Karma requirements**: Some subreddits require minimum karma to post
+
+SubPirate Pro respects these limits by:
+- Queuing campaign runs with built-in delays
+- Rotating through multiple accounts
+- Implementing exponential backoff on errors
+- Disabling accounts on repeated failures
+
+### Account Age and Karma
+
+New Reddit accounts have restrictions:
+
+- Many subreddits require accounts to be 30+ days old
+- Minimum karma requirements vary (100 to 1000+ common)
+- Low-karma accounts may be shadowbanned in some communities
+
+**Recommendation**: Connect accounts with:
+- 60+ days of age
+- 500+ combined karma
+- Email verification completed
+- Some organic post history
+
+### Number of Accounts
+
+**Free Plan**: Connect up to 3 Reddit accounts
+
+**Pro Plan**: Connect up to 10 Reddit accounts
+
+**Enterprise Plan**: Unlimited accounts
+
+<Info>
+  Using multiple accounts helps distribute posting load and reduces the chance of rate limiting or account restrictions.
+</Info>
+
+## Security and Privacy
+
+### Token Storage
+
+Reddit OAuth tokens are stored securely:
+
+- **Encryption**: AES-256-GCM encryption
+- **Key management**: Encryption keys stored separately from data
+- **Access control**: Only you can access your connected accounts
+- **Revocation**: Deleting an account revokes all tokens
+
+### What SubPirate Pro Can Do
+
+With the granted permissions, SubPirate Pro can:
+
+- ✅ Read your username and account info
+- ✅ Create posts on your behalf (only when you trigger campaigns)
+- ✅ Read your post and comment history
+- ❌ Cannot read your private messages
+- ❌ Cannot change account settings
+- ❌ Cannot vote on posts
+- ❌ Cannot send messages or chat
+
+### Revoking Access
+
+To revoke SubPirate Pro's access:
+
+**Option 1: Delete from SubPirate Pro**
+1. Go to Reddit Accounts page
+2. Click delete button on the account
+3. Confirm deletion
+4. Tokens are revoked and deleted
+
+**Option 2: Revoke on Reddit**
+1. Go to reddit.com/prefs/apps
+2. Find "SubPirate Pro" in authorized apps
+3. Click "revoke access"
+4. SubPirate Pro can no longer access this account
+
+<Warning>
+  If you revoke access on Reddit but don't delete the account in SubPirate Pro, campaigns using that account will fail to post.
+</Warning>
+
+## Troubleshooting
+
+### Connection Failed
+
+**Symptoms**: Redirected to Reddit but then back to SubPirate Pro with an error.
+
+**Causes**:
+- Reddit OAuth app not configured correctly
+- Invalid redirect URI
+- Reddit API outage
+
+**Solutions**:
+- Try connecting again (temporary glitch)
+- Check that you're logged into the correct Reddit account
+- Verify your email on Reddit (required for OAuth)
+- Contact support if problem persists
+
+### Account Not Refreshing
+
+**Symptoms**: Clicking refresh doesn't update karma or posts.
+
+**Causes**:
+- Reddit API rate limit reached
+- Account was recently refreshed (cooldown)
+- Reddit API error
+
+**Solutions**:
+- Wait 1-2 minutes and try again
+- Check if Reddit is experiencing outages
+- Try refreshing a different account first
+
+### Posts Not Showing
+
+**Symptoms**: Account shows 0 posts, but you know there are posts.
+
+**Causes**:
+- Account has no public posts
+- Posts are deleted or removed
+- Reddit API not returning post history
+
+**Solutions**:
+- Verify posts are visible on reddit.com/user/[username]
+- Check if account is shadowbanned (post to r/ShadowBan)
+- Try disconnecting and reconnecting the account
+
+### Campaign Posts Failing
+
+**Symptoms**: Campaigns using this account show failures.
+
+**Causes**:
+- Account doesn't meet subreddit requirements
+- Account is rate limited or restricted by Reddit
+- Content violates subreddit rules
+- Account tokens expired or revoked
+
+**Solutions**:
+- Check account health status in campaign Accounts tab
+- Review error messages in campaign run logs
+- Verify account meets karma and age requirements for target subreddits
+- Try reconnecting the account to refresh tokens
+- Test posting manually on Reddit to ensure account works
+
+## Best Practices
+
+<Card title="Diversify Accounts" icon="users">
+  Use multiple accounts with varied histories:
+  - Different creation dates
+  - Different karma levels
+  - Different posting patterns
+  
+  This reduces the risk if one account is restricted.
+</Card>
+
+<Card title="Build Authentic History" icon="heart">
+  Before using accounts for campaigns:
+  - Make organic posts and comments
+  - Engage genuinely in communities
+  - Build karma naturally
+  - Establish a posting history
+  
+  Accounts with authentic history have better success rates.
+</Card>
+
+<Card title="Monitor Health" icon="activity">
+  Regularly check account health:
+  - Review post history for removed posts
+  - Watch for repeated failures in campaigns
+  - Address warnings before accounts are disabled
+  - Keep accounts in "Healthy" status
+</Card>
+
+<Card title="Rotate Usage" icon="refresh">
+  Don't overuse a single account:
+  - Spread posts across multiple accounts
+  - Use campaigns to automatically rotate
+  - Give accounts rest periods
+  - Vary posting times and patterns
+</Card>
+
+<Card title="Respect Reddit" icon="shield">
+  Follow Reddit's rules and culture:
+  - Don't spam
+  - Provide value in posts
+  - Follow subreddit-specific guidelines
+  - Engage authentically even when promoting
+  
+  Automation should enhance, not replace, genuine participation.
+</Card>
+
+## Account Management Tips
+
+### Organizing Multiple Accounts
+
+- **Custom avatars**: Upload unique avatars to quickly identify accounts
+- **Naming convention**: Use Reddit usernames that indicate their purpose (e.g., u/BrandName_Official)
+- **Campaign assignment**: Assign accounts to specific campaigns based on their karma and history
+
+### Maintaining Account Health
+
+- **Weekly reviews**: Check account stats weekly
+- **Karma growth**: Ensure karma is growing (accounts used only for promotion may decline)
+- **Post diversity**: Don't use accounts only for campaign posts; mix in organic content
+- **Engagement**: Comment and participate, not just post
+
+### Scaling Your Strategy
+
+1. **Start with 1-2 accounts**: Test and refine your approach
+2. **Add accounts gradually**: As you prove success, connect more accounts
+3. **Upgrade plans**: Increase account limits with Pro or Enterprise plans
+4. **Monitor performance**: Track which accounts perform best in which subreddits
+5. **Optimize assignments**: Assign high-karma accounts to strict subreddits, new accounts to lenient ones

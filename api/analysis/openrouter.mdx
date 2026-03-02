@@ -1,0 +1,301 @@
+---
+title: OpenRouter analyze
+description: Direct OpenRouter API proxy for subreddit analysis
+---
+
+## POST /api/openrouter/analyze-subreddit
+
+Proxy endpoint for direct OpenRouter LLM analysis. Used by frontend Web Workers for AI-powered subreddit analysis. Unlike `/api/analyze/:subreddit`, this endpoint does not fetch Reddit data or perform caching—it simply forwards the request to OpenRouter.
+
+### Authentication
+
+Requires valid JWT token. No subscription check is performed at this endpoint level (quota is enforced).
+
+### Quota Management
+
+This endpoint enforces the analysis quota:
+- Checks monthly usage before processing
+- Returns 403 if quota exceeded
+- Increments counter on success
+- Admin users bypass quota limits
+
+### Request Body
+
+<ParamField body="data" type="object" required>
+  Subreddit data object to analyze
+  <Expandable>
+    <ParamField body="data.name" type="string" required>
+      Subreddit name
+    </ParamField>
+    <ParamField body="data.title" type="string">
+      Subreddit display title
+    </ParamField>
+    <ParamField body="data.description" type="string">
+      Public description
+    </ParamField>
+    <ParamField body="data.rules" type="array">
+      Array of rule objects (short_name, description)
+    </ParamField>
+    <ParamField body="data.content_categories" type="array">
+      Array of allowed content types
+    </ParamField>
+    <ParamField body="data.requires_approval" type="boolean">
+      Whether posts require mod approval
+    </ParamField>
+    <ParamField body="data.karma_required" type="boolean">
+      Whether karma is required to post
+    </ParamField>
+    <ParamField body="data.account_age_required" type="boolean">
+      Whether account age restrictions exist
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="systemPrompt" type="string">
+  Custom system prompt (defaults to Reddit marketing analyst prompt)
+</ParamField>
+
+<ParamField body="responseFormat" type="object">
+  OpenRouter response format configuration (defaults to `{type: "json_object"}`)
+</ParamField>
+
+### OpenRouter Configuration
+
+From `server.js:1499-1565`:
+
+```javascript
+const OPENROUTER_MODEL = 'google/gemini-3-flash-preview';
+
+const result = await callOpenRouterChatCompletions({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  referer: req.headers.origin,
+  title: 'SubPirate - Reddit Marketing Analysis',
+  body: {
+    model: OPENROUTER_MODEL,
+    messages: [
+      {
+        role: 'system',
+        content: systemPrompt || 'You are an expert Reddit marketing analyst...'
+      },
+      { role: 'user', content: prompt }
+    ],
+    temperature: 0.6,
+    max_tokens: 35000,
+    stream: false,
+    response_format: responseFormat || { type: 'json_object' }
+  }
+});
+```
+
+### Response
+
+Returns the raw OpenRouter API response JSON.
+
+<ResponseField name="choices" type="array">
+  OpenRouter response choices
+  <Expandable>
+    <ResponseField name="message" type="object">
+      LLM message object
+      <Expandable>
+        <ResponseField name="role" type="string">
+          Always "assistant"
+        </ResponseField>
+        <ResponseField name="content" type="string">
+          Raw JSON string with analysis results
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="finish_reason" type="string">
+      Reason for completion (e.g., "stop")
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="usage" type="object">
+  Token usage statistics
+  <Expandable>
+    <ResponseField name="prompt_tokens" type="number">
+      Input tokens consumed
+    </ResponseField>
+    <ResponseField name="completion_tokens" type="number">
+      Output tokens generated
+    </ResponseField>
+    <ResponseField name="total_tokens" type="number">
+      Total tokens used
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Request
+
+```bash cURL
+curl -X POST "https://api.example.com/api/openrouter/analyze-subreddit" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": {
+      "name": "startups",
+      "title": "Startups",
+      "description": "Discussion about startups and entrepreneurship",
+      "rules": [
+        {
+          "short_name": "No spam",
+          "description": "No promotional content"
+        }
+      ],
+      "content_categories": [],
+      "requires_approval": false,
+      "karma_required": false,
+      "account_age_required": false
+    },
+    "systemPrompt": "You are an expert Reddit marketing analyst. Follow subreddit rules.",
+    "responseFormat": { "type": "json_object" }
+  }'
+```
+
+### Example Response
+
+```json
+{
+  "id": "gen-abc123",
+  "model": "google/gemini-3-flash-preview",
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "{\"marketingFriendliness\":{\"score\":45,\"reasons\":[...]}}"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1250,
+    "completion_tokens": 890,
+    "total_tokens": 2140
+  }
+}
+```
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  Missing required data.name field
+  ```json
+  {
+    "error": "Missing required data for subreddit analysis"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  Quota exceeded
+  ```json
+  {
+    "error": "quota_exceeded",
+    "feature": "analysis",
+    "used": 10,
+    "limit": 10,
+    "upgrade_required": true,
+    "message": "You've used all 10 analyses this month. Upgrade for more."
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="500" type="error">
+  OpenRouter API key not configured or internal error
+</ResponseField>
+
+<ResponseField name="502" type="error">
+  OpenRouter API error
+  ```json
+  {
+    "error": "OpenRouter API error: 429",
+    "details": "Rate limit exceeded"
+  }
+  ```
+</ResponseField>
+
+## Usage in Frontend
+
+This endpoint is used by Web Workers for asynchronous analysis:
+
+```typescript
+// From analysisWorker.ts
+const response = await fetch('/api/openrouter/analyze-subreddit', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  },
+  body: JSON.stringify({
+    data: subredditData,
+    systemPrompt: 'You are an expert Reddit marketing analyst...',
+    responseFormat: { type: 'json_object' }
+  })
+});
+
+const result = await response.json();
+const analysis = JSON.parse(result.choices[0].message.content);
+```
+
+## Prompt Building
+
+The prompt is constructed by `buildAnalysisPrompt()` (from `api/_lib/analyze.js` and `server.js:586-630`):
+
+```javascript
+function buildAnalysisPrompt(data, options = {}) {
+  const { topPosts, modSummary } = options;
+
+  let prompt = `Analyze the following subreddit for marketing potential:
+
+Subreddit: r/${data.name}
+Title: ${data.title}
+Description: ${data.description}
+
+Rules:
+${data.rules.map((r, i) => `${i+1}. ${r.short_name || r.title}: ${r.description}`).join('\n')}
+
+Restrictions:
+- Posts require approval: ${data.requires_approval}
+- Karma requirement: ${data.karma_required}
+- Account age requirement: ${data.account_age_required}
+`;
+
+  if (topPosts?.length > 0) {
+    prompt += `\n\nTop Posts (for title pattern analysis):\n`;
+    topPosts.slice(0, 10).forEach(p => {
+      prompt += `- "${p.title}" (${p.score} upvotes, ${p.num_comments} comments)\n`;
+    });
+  }
+
+  if (modSummary) {
+    prompt += `\n\nModerator Activity:\n`;
+    prompt += `- Total mods: ${modSummary.totalHumanMods}\n`;
+    prompt += `- Very active (< 7 days): ${modSummary.veryActive}\n`;
+    prompt += `- Active (< 30 days): ${modSummary.active}\n`;
+    prompt += `- Dormant (> 30 days): ${modSummary.dormant}\n`;
+  }
+
+  return prompt;
+}
+```
+
+## Rate Limiting
+
+OpenRouter enforces rate limits:
+- **Free tier**: 20 requests/minute, 200 requests/day
+- **Paid**: Higher limits based on credit balance
+- **Model-specific**: Gemini 3 Flash Preview has generous limits
+
+If rate limited, retry with exponential backoff.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Full Analysis Endpoint" icon="magnifying-glass" href="/api/analysis/subreddit">
+    Complete analysis with Reddit data fetching and caching
+  </Card>
+  <Card title="OpenRouter Setup" icon="key" href="/integrations/openrouter-ai">
+    Configure your OpenRouter API key
+  </Card>
+</CardGroup>

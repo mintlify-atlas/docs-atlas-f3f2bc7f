@@ -1,0 +1,626 @@
+---
+title: "Campaigns"
+description: "Automate Reddit posting with scheduled campaigns, content versioning, and run tracking"
+---
+
+Campaigns are automated posting workflows that schedule and execute Reddit posts across multiple subreddits using your connected accounts. Each campaign can target specific subreddit and account combinations, with intelligent scheduling and health monitoring.
+
+## Campaign Overview
+
+A campaign consists of:
+
+- **Account Targets**: Which Reddit accounts will be used for posting
+- **Subreddit Targets**: Which subreddits will receive posts
+- **Content Versions**: What content will be posted (title, body, media)
+- **Schedule Settings**: When and how often posts are made
+- **Run History**: Record of all execution attempts and results
+
+## Creating a Campaign
+
+<Steps>
+  <Step title="Navigate to Campaigns">
+    From the main menu, go to the Campaigns section. You'll see your campaign dashboard with summary metrics.
+  </Step>
+  
+  <Step title="Click New Campaign">
+    Click the "New Campaign" button in the header. A creation form expands below the metrics.
+  </Step>
+  
+  <Step title="Configure Basic Settings">
+    Fill in the campaign metadata:
+    
+    **Name** (required): Descriptive campaign name (e.g., "Spring Launch Promotion")
+    
+    **Objective** (optional): Campaign goal (e.g., "Drive profile visits from target communities")
+    
+    **Description** (optional): Additional notes about the campaign strategy
+    
+    **Status**: Choose initial status:
+    - **Draft**: Campaign exists but won't run automatically
+    - **Active**: Campaign will run on schedule
+    - **Paused**: Temporarily suspended
+    - **Completed**: Campaign finished, no longer runs
+    
+    **Daily Post Target**: Number of posts to make per day (1-100)
+    
+    **Start Date**: When the campaign begins
+    
+    **End Date**: When the campaign ends (optional)
+  </Step>
+  
+  <Step title="Create Campaign">
+    Click "Create campaign". You're redirected to the campaign detail page to configure accounts, targets, and content.
+  </Step>
+</Steps>
+
+## Campaign Configuration
+
+After creating a campaign, configure it using the tabbed interface:
+
+### Overview Tab
+
+#### Campaign Settings
+
+- **Name**: Edit the campaign name
+- **Objective**: Update the campaign goal
+- **Status**: Change between Draft, Active, Paused, Completed
+- **Daily Post Target**: Adjust posts per day (1-100)
+- **Start/End Dates**: Modify campaign duration
+- **Description**: Add strategic notes
+
+#### Autopost Readiness
+
+A visual checklist showing what's needed for the campaign to run:
+
+<Card title="Readiness Checks" icon="check">
+  - ✅ **Linked Account Targets**: At least one Reddit account selected
+  - ✅ **Subreddit Targets**: At least one subreddit selected
+  - ✅ **Active Content Version**: At least one content version created
+  - ✅ **Autopost Campaign State**: Campaign status is "Active" and not paused
+  
+  All four must be green (Ready) for automated posting to work.
+</Card>
+
+#### Active Content Configuration
+
+Configure the content that will be posted:
+
+**Post Type**
+- **Text (self)**: Text post with title and body
+- **Link**: URL post with title and optional body
+- **Image**: Image post (requires media from Media Library)
+- **Video**: Video post (requires media from Media Library)
+
+**Title** (required): The post title. Use variables and templates from subreddit analysis.
+
+**Body** (optional): Post body text. Markdown formatting supported.
+
+**Link URL**: Required for link posts, optional for image/video as fallback.
+
+**Media Rotation Mode**: How media assets are selected (currently only "Sequential" supported).
+
+Click "Save New Content Version" to create a new version. The latest version is automatically activated.
+
+### Accounts Tab
+
+Select which Reddit accounts will be used for posting:
+
+<Steps>
+  <Step title="View Available Accounts">
+    The tab shows all your connected Reddit accounts with:
+    - Username and avatar
+    - Karma score
+    - Total posts and posts today
+    - Selection checkbox
+  </Step>
+  
+  <Step title="Select Accounts">
+    Check the boxes next to accounts you want to use for this campaign. You can select multiple accounts.
+  </Step>
+  
+  <Step title="Review Health Status">
+    Each account shows its health status:
+    
+    - **Healthy** (green): Account is active and ready to post
+    - **Warning** (yellow): 1-2 consecutive failures, posting continues
+    - **Error** (orange): Multiple failures, may skip posting
+    - **Disabled** (red): Account in cooldown, temporarily unavailable
+    
+    Disabled accounts show "disabled until" timestamp when they'll become available again.
+  </Step>
+  
+  <Step title="Save Assignments">
+    Click "Save Assignments" to apply your account selection.
+  </Step>
+</Steps>
+
+#### Account Health and Cooldowns
+
+The campaign system automatically manages account health:
+
+- **After 1 failure**: Status changes to "Warning", posting continues
+- **After 2 failures**: Status changes to "Error", posting continues with caution
+- **After 3 failures**: Account disabled for 5 minutes
+- **After 4 failures**: Account disabled for 30 minutes
+- **After 5+ failures**: Account disabled for 120 minutes
+
+Healthy posting resets the failure count to 0 and restores "Healthy" status.
+
+### Subreddit Targets
+
+On the Accounts tab, you'll also configure subreddit targets:
+
+<Steps>
+  <Step title="View Saved Subreddits">
+    The subreddit selector shows all subreddits you've analyzed and saved, organized by project (if applicable).
+  </Step>
+  
+  <Step title="Select Targets">
+    Check the boxes next to subreddits where you want to post. Select multiple for broader reach.
+  </Step>
+  
+  <Step title="Save Assignments">
+    Click "Save Assignments" to apply subreddit selection.
+  </Step>
+</Steps>
+
+#### Account-Subreddit Pairing
+
+The campaign creates all possible combinations of your selected accounts and subreddits:
+
+**Example:**
+- 3 selected accounts (u/account1, u/account2, u/account3)
+- 2 selected subreddits (r/subreddit1, r/subreddit2)
+- **Result**: 6 pairings:
+  - u/account1 → r/subreddit1
+  - u/account1 → r/subreddit2
+  - u/account2 → r/subreddit1
+  - u/account2 → r/subreddit2
+  - u/account3 → r/subreddit1
+  - u/account3 → r/subreddit2
+
+When the campaign runs, it rotates through these pairings to distribute posts evenly.
+
+### Members Tab
+
+Manage team collaboration on this campaign:
+
+#### Inviting Members
+
+<Steps>
+  <Step title="Enter Email and Role">
+    Input the team member's email address and select their role:
+    - **Admin**: Full campaign management except deletion
+    - **Editor**: Can edit content and settings
+    - **Viewer**: Read-only access to campaign and results
+  </Step>
+  
+  <Step title="Send Invite">
+    Click "Invite Member". An invite token is generated.
+    
+    **Note**: Email delivery is planned for a future release. Share the invite token manually with your team member.
+  </Step>
+  
+  <Step title="Manage Members">
+    View all members and pending invites:
+    - Change member roles via dropdown
+    - Remove members with the remove button
+    - Resend or cancel pending invites
+  </Step>
+</Steps>
+
+#### Campaign Roles
+
+<Card title="Admin" icon="shield">
+  Can do everything except delete the campaign:
+  - Edit all campaign settings
+  - Manage accounts and targets
+  - Create and edit content versions
+  - Run and pause campaigns
+  - Invite and manage members
+</Card>
+
+<Card title="Editor" icon="edit">
+  Can modify campaign content:
+  - Edit campaign details
+  - Change account and subreddit targets
+  - Create content versions
+  - Cannot invite members or run campaigns
+</Card>
+
+<Card title="Viewer" icon="eye">
+  Read-only access:
+  - View campaign settings
+  - See run history and results
+  - Check account health status
+  - Cannot modify anything
+</Card>
+
+### Runs Tab
+
+View and manage campaign execution history:
+
+#### Run History List
+
+All campaign runs are listed with:
+
+- **Run Type**: Manual (user-triggered) or Scheduled (automatic)
+- **Status**: 
+  - **Queued**: Waiting to execute
+  - **Running**: Currently posting
+  - **Completed**: Finished successfully
+  - **Failed**: Errors prevented completion
+  - **Canceled**: Stopped before completion
+- **Timestamps**: When scheduled, started, and ended
+- **Attempt Metrics**: Target, executed, failed, skipped
+- **Shortfall**: Number of posts below target
+
+Click any run to view detailed attempt logs and events.
+
+#### Run Detail View
+
+When you select a run, you see:
+
+**Run Summary**
+- Configuration snapshot (what settings were active)
+- Overall success/failure metrics
+- Timing information
+
+**Attempt List**
+Each posting attempt shows:
+- Account used (username)
+- Subreddit target
+- Content version
+- Status (posted, failed, skipped, deduped)
+- Error messages (if failed)
+- Reddit post ID (if successful)
+- Retry count
+
+**Event Log**
+Detailed timeline of run execution:
+- Run started/ended events
+- Account health changes
+- Posting successes/failures
+- Pause/resume actions
+- System warnings
+
+Events include severity levels (info, warning, error) and detailed payloads for debugging.
+
+### Settings Tab
+
+Advanced campaign configuration:
+
+**Timezone**
+Set the timezone for campaign scheduling (IANA format, e.g., "America/New_York"). Determines when "daily" resets and posting times.
+
+**Jitter Seconds**
+Randomize posting times by up to this many seconds. Helps posts appear more natural (e.g., 300 = ±5 minutes).
+
+**Carry-Over Enabled**
+If enabled, unmet daily post targets carry over to the next day. If disabled, each day starts fresh.
+
+**Pause Requested**
+(Read-only, set via campaign status) Indicates if the campaign should pause after the current run completes.
+
+## Running Campaigns
+
+### Manual Runs
+
+Trigger a campaign run immediately:
+
+<Steps>
+  <Step title="Click Preview & Run">
+    On the campaign detail page or campaigns list, click "Preview & Run" or "Run now".
+  </Step>
+  
+  <Step title="Review Preview">
+    A confirmation dialog shows:
+    - Campaign name and run date
+    - Target attempts (how many posts will be made)
+    - Account/subreddit pair count
+    - Remaining posts today
+    - Carry-over from previous days
+    - Warnings and skips (if any)
+  </Step>
+  
+  <Step title="Confirm">
+    Click "Queue manual run now?" to confirm. The run is added to the queue and will execute within seconds.
+  </Step>
+</Steps>
+
+**Run Prevents**
+
+You cannot run if:
+- No account targets selected
+- No subreddit targets selected
+- No active content version created
+- Daily post target already met (0 attempts needed)
+
+### Automated Scheduling
+
+Campaigns with status "Active" run automatically:
+
+**How It Works**
+
+1. **Scheduler**: A cron job runs every minute (Vercel cron at `/api/internal/campaigns/dispatch`)
+2. **Eligibility Check**: Looks for campaigns that:
+   - Have status "Active"
+   - Have not requested pause
+   - Are within start/end date range
+   - Have not met today's post target
+   - Have no queued or running executions
+3. **Queue Run**: Creates a campaign run with status "Queued"
+4. **Execute**: Run processes attempts in sequence, posting to Reddit via connected accounts
+5. **Update Metrics**: Campaign run records success/failure counts and shortfall
+
+**Daily Reset**
+
+At midnight in the campaign's configured timezone:
+- Posts today counter resets to 0
+- Shortfall from previous day carries over (if carry-over enabled)
+- New runs scheduled to meet daily target
+
+### Pause and Resume
+
+**Pausing**
+
+<Steps>
+  <Step title="Click Pause Button">
+    On the campaign list or detail page, click the "Pause" button (available when status is "Active").
+  </Step>
+  
+  <Step title="Complete In-Flight Run">
+    If a run is currently executing, it completes the current attempt before stopping. Future attempts are skipped.
+  </Step>
+  
+  <Step title="Status Changes">
+    Campaign status changes to "Paused". No new automatic runs are scheduled.
+  </Step>
+</Steps>
+
+**Resuming**
+
+<Steps>
+  <Step title="Click Resume Button">
+    Click "Resume" or "Activate" on a paused campaign.
+  </Step>
+  
+  <Step title="Status Changes">
+    Campaign status changes back to "Active". Automatic scheduling resumes at the next cron interval.
+  </Step>
+</Steps>
+
+## Content Versioning
+
+Campaigns support multiple content versions:
+
+### Creating Versions
+
+Each time you click "Save New Content Version" in the Overview tab:
+
+1. **Deactivate Previous**: The currently active version is marked inactive
+2. **Increment Version**: A new version number is assigned (1, 2, 3, etc.)
+3. **Activate New**: The new version becomes active immediately
+4. **Snapshot Saved**: All content details are stored with the version
+
+### Version History
+
+All versions are preserved. You can:
+
+- View all past versions in the campaign detail
+- See which version was used for each campaign run
+- Understand how content evolved over time
+- (Future) Reactivate old versions
+
+### Active Version
+
+Only one content version can be active at a time:
+
+- Active version is used for all new campaign runs
+- Run history shows which version was active when that run executed
+- Changing active version doesn't affect queued runs (they use snapshot)
+
+## Media Library Integration
+
+For image and video campaigns, link media assets from the Media Library:
+
+<Steps>
+  <Step title="Upload Media">
+    Navigate to Campaigns > Media Library. Upload images, videos, or GIFs.
+  </Step>
+  
+  <Step title="Link to Campaign">
+    On the campaign detail Overview tab:
+    - Select media from the "Available Media" dropdown
+    - Click "Attach Media"
+    - Media is linked to the campaign
+  </Step>
+  
+  <Step title="Set Rotation Mode">
+    Choose how media is selected:
+    - **Sequential**: Cycles through media in order (1, 2, 3, 1, 2, 3...)
+    - (Future) Random, weighted, or conditional modes
+  </Step>
+  
+  <Step title="Use in Posts">
+    When the campaign runs:
+    - For image/video post types, the next media in rotation is attached
+    - Media URL is passed to Reddit API
+    - Rotation state is saved for next attempt
+  </Step>
+</Steps>
+
+**Media is Optional**
+
+Even for image/video post types:
+- If no media is linked, the `link_url` field is used as fallback
+- The post becomes a link post instead of direct media
+- This allows flexibility in content strategy
+
+## Campaign Metrics
+
+The campaigns dashboard shows aggregate metrics:
+
+<Card title="Campaign Status Summary" icon="chart">
+  - **Total Campaigns**: All campaigns you've created
+  - **Active**: Currently running on schedule
+  - **Draft**: Created but not running
+  - **Paused**: Temporarily suspended
+  - **Completed**: Finished campaigns
+</Card>
+
+<Card title="Execution Metrics" icon="activity">
+  - **Queued Runs**: Pending executions across all campaigns
+  - **Shortfall**: Total unmet post targets across campaigns
+  - **Unhealthy Accounts**: Accounts in warning, error, or disabled state
+</Card>
+
+### Per-Campaign Metrics
+
+Each campaign card shows:
+
+- **Status Badge**: Visual indicator of campaign state
+- **Date Range**: Start to end date
+- **Daily Target**: Posts per day
+- **Linked Assets**: Number of media items attached
+- **Queued Runs**: Pending executions for this campaign
+- **Shortfall**: Unmet posts from yesterday
+- **Unhealthy Accounts**: Problem accounts in this campaign
+
+## Troubleshooting Campaigns
+
+### Campaign Won't Run
+
+**Check Readiness**
+- Verify all 4 readiness checks are green in the Overview tab
+- Ensure status is "Active" and not "Paused"
+- Confirm start date is today or in the past
+- Check that daily post target isn't already met
+
+**Check Scheduling**
+- Campaign runs every minute if conditions are met
+- Manual runs bypass scheduling checks
+- Look at run history to see if runs are being created but failing
+
+### Posts Failing
+
+**Account Issues**
+- Check account health status on Accounts tab
+- If disabled, wait for cooldown to expire
+- Verify Reddit account is still connected in Reddit Accounts page
+- Ensure account has sufficient karma for target subreddits
+
+**Content Issues**
+- Verify content meets subreddit rules (check analysis)
+- Ensure media URLs are accessible if using image/video posts
+- Check that link URLs are valid and not blacklisted
+- Review error messages in run attempt logs
+
+### High Shortfall
+
+**Causes**
+- Not enough account/subreddit pairings to meet daily target
+- Accounts frequently hitting cooldowns or errors
+- Subreddit restrictions preventing posts
+- Posts being removed quickly (appears as success, but isn't)
+
+**Solutions**
+- Add more account targets
+- Add more subreddit targets
+- Reduce daily post target
+- Review and fix content to comply with subreddit rules
+- Check Reddit account standing (shadowbanned?)
+
+## Campaign Best Practices
+
+<Card title="Start Small" icon="seedling">
+  Begin with:
+  - 1-2 accounts
+  - 3-5 high-score subreddits
+  - Daily target of 3-5 posts
+  
+  Scale up after verifying success.
+</Card>
+
+<Card title="Monitor Health" icon="heart">
+  Check campaign runs daily:
+  - Review run success rates
+  - Watch for account health degradation
+  - Read error messages in event logs
+  - Adjust content or targets based on feedback
+</Card>
+
+<Card title="Authentic Content" icon="user">
+  Even automated posts should:
+  - Provide genuine value
+  - Follow community guidelines
+  - Vary in wording (use content versions)
+  - Avoid spammy patterns
+</Card>
+
+<Card title="Respect Limits" icon="shield">
+  Stay within Reddit's bounds:
+  - Don't exceed 5-10 posts per day per account
+  - Space posts across time (use jitter)
+  - Don't post identical content repeatedly
+  - Follow each subreddit's posting frequency rules
+</Card>
+
+<Card title="Use Projects" icon="folder">
+  Organize campaigns by:
+  - Creating projects for different themes
+  - Grouping related subreddits
+  - Running separate campaigns per project
+  - Tracking which strategies work where
+</Card>
+
+## Example Campaign Setup
+
+**Goal**: Launch a new SaaS product to tech communities
+
+<Steps>
+  <Step title="Create Project">
+    Project name: "SaaS Product Launch Q1"
+    
+    Add subreddits: r/SaaS, r/startups, r/Entrepreneur, r/indiehackers
+  </Step>
+  
+  <Step title="Create Campaign">
+    Name: "Launch Week - Value Showcase"
+    
+    Objective: "Share our unique features to tech communities"
+    
+    Daily target: 5 posts
+    
+    Duration: 7 days
+  </Step>
+  
+  <Step title="Configure Accounts">
+    Select 2 Reddit accounts with good karma and account age
+  </Step>
+  
+  <Step title="Create Content">
+    Post type: Text
+    
+    Title: "We built [Feature] to solve [Pain Point] - here's what we learned"
+    
+    Body: Share authentic journey, technical challenges, lessons learned. End with subtle mention of product.
+  </Step>
+  
+  <Step title="Activate">
+    Set status to "Active"
+    
+    Campaign runs automatically, posting 5x/day across 4 subreddits using 2 accounts
+    
+    Total: 35 posts over 7 days
+  </Step>
+  
+  <Step title="Monitor and Adjust">
+    Check daily:
+    - Which posts get upvoted or removed
+    - Account health status
+    - Subreddit-specific performance
+    
+    Update content versions based on what works
+  </Step>
+</Steps>

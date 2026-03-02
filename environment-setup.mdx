@@ -1,0 +1,698 @@
+---
+title: "Environment setup"
+description: "Complete guide to configuring environment variables and API credentials for SubPirate Pro"
+---
+
+# Environment setup
+
+SubPirate Pro requires several environment variables to function properly. This guide documents all available configuration options, their purpose, and how to set them up correctly.
+
+<Warning>
+  Never commit your `.env` file to version control. The `.env.example` file is provided as a template - copy it to `.env` and fill in your actual values.
+</Warning>
+
+## Quick setup
+
+<Steps>
+  <Step title="Copy the environment template">
+    ```bash
+    cp .env.example .env
+    ```
+  </Step>
+
+  <Step title="Generate encryption key">
+    ```bash
+    node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+    ```
+    
+    Copy the output to `TOKEN_ENCRYPTION_KEY` in your `.env` file.
+  </Step>
+
+  <Step title="Fill in API credentials">
+    Add your Supabase, Reddit, and OpenRouter credentials to the `.env` file.
+  </Step>
+
+  <Step title="Verify configuration">
+    ```bash
+    npm run dev:all
+    ```
+    
+    Check the console for any missing required variables.
+  </Step>
+</Steps>
+
+## Environment variables reference
+
+### Client variables (VITE_*)
+
+<Note>
+  Variables prefixed with `VITE_` are bundled into the browser and are publicly accessible. Never put secrets in `VITE_*` variables.
+</Note>
+
+#### VITE_SUPABASE_URL
+
+**Required**: Yes  
+**Type**: String (URL)  
+**Example**: `https://abcdefghijklmnop.supabase.co`
+
+Your Supabase project URL. Find this in your Supabase project settings under "API" → "Project URL".
+
+```bash
+VITE_SUPABASE_URL=https://abcdefghijklmnop.supabase.co
+```
+
+#### VITE_SUPABASE_ANON_KEY
+
+**Required**: Yes  
+**Type**: String (JWT)  
+**Example**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
+
+Your Supabase anonymous (public) key. Find this in your Supabase project settings under "API" → "Project API keys" → "anon public".
+
+<Info>
+  The anon key is safe to expose in the browser - it only grants access permitted by your row-level security (RLS) policies.
+</Info>
+
+```bash
+VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+#### VITE_REDDIT_APP_ID
+
+**Required**: Yes  
+**Type**: String  
+**Example**: `abc123DEFghi`
+
+Your Reddit app client ID. Register an app at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) with type "web app" to get this.
+
+```bash
+VITE_REDDIT_APP_ID=abc123DEFghi
+```
+
+<Warning>
+  Your Reddit app must be configured as a "web app" (not "installed app" or "script") for OAuth to work correctly.
+</Warning>
+
+#### VITE_REDDIT_REDIRECT_URI
+
+**Required**: No  
+**Type**: String (URL)  
+**Example**: `http://localhost:5173/auth/reddit/callback`
+
+Optional exact callback URI sent to Reddit's `/api/v1/authorize` endpoint. Use this to force a single canonical callback URI across dev/prod hosts.
+
+```bash
+# Development
+VITE_REDDIT_REDIRECT_URI=http://localhost:5173/auth/reddit/callback
+
+# Production
+VITE_REDDIT_REDIRECT_URI=https://your-domain.com/auth/reddit/callback
+```
+
+If not set, SubPirate Pro will construct the URI from `APP_ORIGIN` or `PUBLIC_ORIGIN`.
+
+#### VITE_LOCAL_ADMIN_BYPASS
+
+**Required**: No (development only)  
+**Type**: Boolean (`0` or `1`)  
+**Default**: `0`
+
+Enables a "Local Admin Login (dev)" button on the login page for quick testing without Supabase auth.
+
+```bash
+VITE_LOCAL_ADMIN_BYPASS=1
+```
+
+<Warning>
+  This is for development only. Never enable in production.
+</Warning>
+
+#### VITE_LOCAL_ADMIN_TOKEN
+
+**Required**: No (development only)  
+**Type**: String  
+**Example**: `dev-admin-token-12345`
+
+Token used for local admin bypass authentication. Required when `VITE_LOCAL_ADMIN_BYPASS=1`.
+
+```bash
+VITE_LOCAL_ADMIN_TOKEN=dev-admin-token-12345
+```
+
+### Server variables
+
+<Warning>
+  These variables must never be exposed to the browser. They contain sensitive API keys and secrets.
+</Warning>
+
+#### PORT
+
+**Required**: No  
+**Type**: Number  
+**Default**: `8787`
+
+Port for the Express API server in local development.
+
+```bash
+PORT=8787
+```
+
+#### SUPABASE_URL
+
+**Required**: Yes  
+**Type**: String (URL)  
+**Example**: `https://abcdefghijklmnop.supabase.co`
+
+Server-side Supabase project URL. Should match `VITE_SUPABASE_URL`.
+
+```bash
+SUPABASE_URL=https://abcdefghijklmnop.supabase.co
+```
+
+#### SUPABASE_ANON_KEY
+
+**Required**: Yes  
+**Type**: String (JWT)  
+**Example**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
+
+Server-side Supabase anonymous key. Should match `VITE_SUPABASE_ANON_KEY`.
+
+```bash
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+#### SUPABASE_SERVICE_ROLE_KEY
+
+**Required**: No (optional for admin operations)  
+**Type**: String (JWT)  
+**Example**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
+
+Supabase service role key with full database access, bypassing RLS. Find this in Supabase project settings under "API" → "Project API keys" → "service_role secret".
+
+<Warning>
+  The service role key bypasses all RLS policies. Never expose it to the browser or commit it to version control.
+</Warning>
+
+```bash
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+#### OPENROUTER_API_KEY
+
+**Required**: Yes (for subreddit analysis)  
+**Type**: String  
+**Example**: `sk-or-v1-abc123...`
+
+OpenRouter API key for AI-powered subreddit analysis. Sign up at [openrouter.ai](https://openrouter.ai) and create an API key.
+
+SubPirate Pro uses the `google/gemini-3-flash-preview` model for analysis.
+
+```bash
+OPENROUTER_API_KEY=sk-or-v1-abc123...
+```
+
+<Info>
+  OpenRouter charges per-token usage. Monitor your usage at [openrouter.ai/activity](https://openrouter.ai/activity).
+</Info>
+
+#### REDDIT_CLIENT_ID
+
+**Required**: Yes  
+**Type**: String  
+**Example**: `abc123DEFghi`
+
+Reddit app client ID. Should match `VITE_REDDIT_APP_ID`.
+
+```bash
+REDDIT_CLIENT_ID=abc123DEFghi
+```
+
+#### REDDIT_CLIENT_SECRET
+
+**Required**: Yes  
+**Type**: String  
+**Example**: `xyz789ABCdef-secretkey`
+
+Reddit app client secret. Find this in your Reddit app settings at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps).
+
+<Warning>
+  This is a secret value. Never expose it to the browser.
+</Warning>
+
+```bash
+REDDIT_CLIENT_SECRET=xyz789ABCdef-secretkey
+```
+
+#### REDDIT_USER_AGENT
+
+**Required**: Yes  
+**Type**: String  
+**Example**: `web:SubPirate:1.0.0 (by /u/yourusername)`
+
+User agent string for Reddit API requests. Reddit requires a unique user agent following their format.
+
+```bash
+REDDIT_USER_AGENT="web:SubPirate:1.0.0 (by /u/yourusername)"
+```
+
+<Note>
+  Replace `yourusername` with your actual Reddit username.
+</Note>
+
+#### REDDIT_REDIRECT_URI
+
+**Required**: No  
+**Type**: String (URL)  
+**Example**: `http://localhost:5173/auth/reddit/callback`
+
+Optional exact callback URI expected by the token exchange endpoint. Keep this aligned with `VITE_REDDIT_REDIRECT_URI` when set.
+
+```bash
+REDDIT_REDIRECT_URI=http://localhost:5173/auth/reddit/callback
+```
+
+#### TOKEN_ENCRYPTION_KEY
+
+**Required**: Yes  
+**Type**: String (Base64)  
+**Example**: `abcDEF123xyz==`
+
+Base64-encoded 32-byte key for AES-256-GCM encryption of Reddit refresh tokens.
+
+Generate with:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+```bash
+TOKEN_ENCRYPTION_KEY=abcDEF123xyz==
+```
+
+<Warning>
+  Keep this key secure. If compromised, all stored Reddit tokens must be re-encrypted or invalidated.
+</Warning>
+
+#### APP_ORIGIN
+
+**Required**: Yes  
+**Type**: String (URL)  
+**Example**: `http://localhost:5173`
+
+Base origin for constructing OAuth callback URIs. Used to compute the Reddit redirect URI as `${APP_ORIGIN}/auth/reddit/callback`.
+
+```bash
+# Development
+APP_ORIGIN=http://localhost:5173
+
+# Production
+APP_ORIGIN=https://your-domain.com
+```
+
+<Info>
+  In production, this must be a valid `https://` origin.
+</Info>
+
+#### PUBLIC_ORIGIN
+
+**Required**: No  
+**Type**: String (URL)  
+**Example**: `https://your-domain.com`
+
+Alternative to `APP_ORIGIN` for production deployments. Takes precedence if set.
+
+```bash
+PUBLIC_ORIGIN=https://your-domain.com
+```
+
+#### CORS_ORIGINS
+
+**Required**: Yes  
+**Type**: String (comma-separated URLs)  
+**Example**: `http://localhost:5173,http://127.0.0.1:5173`
+
+Comma-separated list of allowed browser origins for API requests.
+
+```bash
+# Development
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+
+# Production
+CORS_ORIGINS=https://your-domain.com
+```
+
+#### SPEAKEASY_PASSWORD
+
+**Required**: Only if using `/speakeasy` endpoints  
+**Type**: String  
+**Example**: `secret-speakeasy-pass-123`
+
+Password required to use `/speakeasy` validate/redeem endpoints (legacy access flow).
+
+```bash
+SPEAKEASY_PASSWORD=secret-speakeasy-pass-123
+```
+
+### Campaign scheduler variables
+
+#### CAMPAIGN_SCHEDULER_ENABLED
+
+**Required**: No  
+**Type**: Boolean (`true` or `false`)  
+**Default**: `true`
+
+Enables the campaign scheduler and cron endpoint.
+
+```bash
+CAMPAIGN_SCHEDULER_ENABLED=true
+```
+
+<Warning>
+  Disable this in development if you don't want automated campaign execution.
+</Warning>
+
+#### CAMPAIGN_MAX_WORKERS
+
+**Required**: No  
+**Type**: Number  
+**Default**: `1`
+
+Maximum number of concurrent campaign workers.
+
+```bash
+CAMPAIGN_MAX_WORKERS=1
+```
+
+#### CRON_SECRET
+
+**Required**: Yes (for production cron)  
+**Type**: String  
+**Example**: `cron-secret-abc123`
+
+Secret token passed in the `Authorization` header when calling `/api/campaigns/cron`. Prevents unauthorized campaign execution.
+
+```bash
+CRON_SECRET=cron-secret-abc123
+```
+
+<CodeGroup>
+```json Vercel cron configuration
+// vercel.json
+{
+  "crons": [{
+    "path": "/api/campaigns/cron",
+    "schedule": "*/5 * * * *"
+  }]
+}
+```
+
+```bash Calling the cron endpoint
+curl -X POST https://your-domain.com/api/campaigns/cron \
+  -H "Authorization: Bearer cron-secret-abc123"
+```
+</CodeGroup>
+
+#### CRON_IP_ALLOWLIST
+
+**Required**: No  
+**Type**: String (comma-separated IPs)  
+**Example**: `192.168.1.1,10.0.0.1`
+
+Optional comma-separated IP allow-list for cron endpoint security. Checks the first IP from `x-forwarded-for` header.
+
+```bash
+CRON_IP_ALLOWLIST=192.168.1.1,10.0.0.1
+```
+
+### Local development variables
+
+#### LOCAL_ADMIN_BYPASS
+
+**Required**: No (development only)  
+**Type**: Boolean (`0` or `1`)  
+**Default**: `0`
+
+Server-side local admin bypass flag. Should match `VITE_LOCAL_ADMIN_BYPASS`.
+
+```bash
+LOCAL_ADMIN_BYPASS=1
+```
+
+#### LOCAL_ADMIN_TOKEN
+
+**Required**: No (development only)  
+**Type**: String  
+**Example**: `dev-admin-token-12345`
+
+Server-side local admin token. Should match `VITE_LOCAL_ADMIN_TOKEN`.
+
+```bash
+LOCAL_ADMIN_TOKEN=dev-admin-token-12345
+```
+
+#### MAILPIT_ORIGIN
+
+**Required**: No  
+**Type**: String (URL)  
+**Default**: `http://127.0.0.1:54324`
+
+Mailpit origin for viewing auth emails during local development with Supabase.
+
+```bash
+MAILPIT_ORIGIN=http://127.0.0.1:54324
+```
+
+<Info>
+  Mailpit runs automatically when you start local Supabase with `supabase start`. Access it at the configured origin to view email confirmations and password resets.
+</Info>
+
+### Stripe variables (optional)
+
+<Note>
+  SubPirate Pro currently has free access placeholders only. These Stripe variables are for future billing implementation.
+</Note>
+
+#### STRIPE_SECRET_KEY
+
+**Required**: No  
+**Type**: String  
+**Example**: `sk_test_...`
+
+Stripe secret API key.
+
+```bash
+STRIPE_SECRET_KEY=sk_test_...
+```
+
+#### STRIPE_WEBHOOK_SECRET
+
+**Required**: No  
+**Type**: String  
+**Example**: `whsec_...`
+
+Stripe webhook signing secret.
+
+```bash
+STRIPE_WEBHOOK_SECRET=whsec_...
+```
+
+#### STRIPE_PRICE_* variables
+
+**Required**: No  
+**Type**: String  
+**Example**: `price_...`
+
+Stripe price IDs for different subscription tiers:
+
+```bash
+STRIPE_PRICE_STARTER_MONTHLY=price_...
+STRIPE_PRICE_STARTER_ANNUAL=price_...
+STRIPE_PRICE_CREATOR_MONTHLY=price_...
+STRIPE_PRICE_CREATOR_ANNUAL=price_...
+STRIPE_PRICE_PRO_MONTHLY=price_...
+STRIPE_PRICE_PRO_ANNUAL=price_...
+```
+
+## Environment-specific configurations
+
+### Local development
+
+<CodeGroup>
+```bash .env (local development)
+# Client (public)
+VITE_SUPABASE_URL=http://127.0.0.1:54321
+VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+VITE_REDDIT_APP_ID=your-reddit-client-id
+VITE_LOCAL_ADMIN_BYPASS=1
+VITE_LOCAL_ADMIN_TOKEN=dev-admin-token
+
+# Server
+PORT=8787
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+OPENROUTER_API_KEY=sk-or-v1-...
+REDDIT_CLIENT_ID=your-reddit-client-id
+REDDIT_CLIENT_SECRET=your-reddit-secret
+REDDIT_USER_AGENT="web:SubPirate:1.0.0 (by /u/yourusername)"
+TOKEN_ENCRYPTION_KEY=your-base64-key
+APP_ORIGIN=http://localhost:5173
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+CAMPAIGN_SCHEDULER_ENABLED=false
+LOCAL_ADMIN_BYPASS=1
+LOCAL_ADMIN_TOKEN=dev-admin-token
+```
+
+```bash Start local Supabase
+supabase start
+# Copy the API URL and anon key from the output
+```
+
+```bash Start development servers
+npm run dev:all
+# Frontend: http://localhost:5173
+# API: http://localhost:8787
+# Mailpit: http://127.0.0.1:54324
+```
+</CodeGroup>
+
+### Production (Vercel)
+
+<CodeGroup>
+```bash Environment variables
+# Set these in Vercel project settings
+
+# Client (public)
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+VITE_REDDIT_APP_ID=your-reddit-client-id
+VITE_REDDIT_REDIRECT_URI=https://your-domain.com/auth/reddit/callback
+
+# Server
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+OPENROUTER_API_KEY=sk-or-v1-...
+REDDIT_CLIENT_ID=your-reddit-client-id
+REDDIT_CLIENT_SECRET=your-reddit-secret
+REDDIT_USER_AGENT="web:SubPirate:1.0.0 (by /u/yourusername)"
+REDDIT_REDIRECT_URI=https://your-domain.com/auth/reddit/callback
+TOKEN_ENCRYPTION_KEY=your-base64-key
+APP_ORIGIN=https://your-domain.com
+CORS_ORIGINS=https://your-domain.com
+CAMPAIGN_SCHEDULER_ENABLED=true
+CAMPAIGN_MAX_WORKERS=1
+CRON_SECRET=your-cron-secret
+```
+
+```bash Deploy to Vercel
+# Preview deployment
+vercel deploy
+
+# Production deployment
+vercel deploy --prod
+```
+</CodeGroup>
+
+<Warning>
+  In production, always use HTTPS origins and never expose development tokens like `LOCAL_ADMIN_TOKEN`.
+</Warning>
+
+## Security best practices
+
+<CardGroup cols={2}>
+  <Card title="Never commit secrets" icon="ban">
+    Add `.env` to `.gitignore` and use `.env.example` as a template
+  </Card>
+  <Card title="Rotate keys regularly" icon="rotate">
+    Periodically regenerate API keys and encryption keys
+  </Card>
+  <Card title="Use VITE_ carefully" icon="eye">
+    Only use `VITE_` prefix for truly public values
+  </Card>
+  <Card title="Secure encryption keys" icon="lock">
+    Generate strong `TOKEN_ENCRYPTION_KEY` and store securely
+  </Card>
+</CardGroup>
+
+## Validation and testing
+
+### Check required variables
+
+```bash
+# Start the servers and check console for warnings
+npm run dev:all
+```
+
+The application will log warnings for any missing required variables.
+
+### Run smoke tests
+
+```bash
+# Start local Supabase first
+supabase start
+
+# Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY from `supabase status`
+
+# Run smoke tests
+npm run smoke:local
+```
+
+Smoke tests verify auth confirmations and RLS policies are working correctly.
+
+### Secret scanning
+
+```bash
+# Scan for accidentally committed secrets
+npm run secret-scan
+```
+
+<Note>
+  Run this before committing to catch any accidentally exposed secrets.
+</Note>
+
+## Troubleshooting
+
+### "Missing required environment variable"
+
+Check that you've set all required variables for your environment:
+- Local dev: Minimum set includes Supabase, Reddit, OpenRouter, and encryption key
+- Production: All server variables plus proper origins and CORS configuration
+
+### "CORS error" when calling API
+
+Verify `CORS_ORIGINS` includes your frontend origin exactly as it appears in the browser:
+```bash
+# Development
+CORS_ORIGINS=http://localhost:5173
+
+# Check browser console for actual origin if error persists
+```
+
+### "Reddit OAuth redirect mismatch"
+
+Ensure these values align:
+1. `VITE_REDDIT_REDIRECT_URI` (if set)
+2. `REDDIT_REDIRECT_URI` (if set)
+3. Redirect URIs in your Reddit app settings
+4. Computed URI from `APP_ORIGIN`
+
+All must point to the exact same callback URL.
+
+### "Token encryption error"
+
+Verify `TOKEN_ENCRYPTION_KEY` is:
+- Exactly 32 bytes before base64 encoding
+- Base64-encoded string
+- Not corrupted with extra whitespace
+
+Regenerate if needed:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+<Card
+  title="Ready to start building?"
+  icon="rocket"
+  href="/quickstart"
+>
+  Head to the quickstart guide to begin using SubPirate Pro
+</Card>

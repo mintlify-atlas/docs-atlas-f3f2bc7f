@@ -1,0 +1,229 @@
+---
+title: "Reddit Public API Proxy"
+api: "GET /api/reddit/public"
+description: "Server-side proxy for unauthenticated Reddit JSON endpoints with URL allowlist"
+---
+
+## Overview
+
+This endpoint proxies requests to Reddit's public JSON API on behalf of the client. It enforces a strict URL allowlist to prevent abuse and ensures consistent User-Agent headers for Reddit API compliance.
+
+<Info>
+  This proxy is for **unauthenticated** Reddit endpoints only (e.g. `/r/subreddit/about.json`). For authenticated endpoints, use the campaign system which handles OAuth tokens.
+</Info>
+
+## Authentication
+
+No authentication required. This is a public endpoint.
+
+## Request Parameters
+
+<ParamField query="url" type="string" required>
+  Full Reddit URL to proxy. Must match the allowlist patterns (see URL Allowlist section).
+</ParamField>
+
+## URL Allowlist
+
+Only the following Reddit URL patterns are allowed:
+
+### Subreddit Endpoints
+
+- `/r/{subreddit}/about.json` - Subreddit metadata
+- `/r/{subreddit}/about/rules.json` - Subreddit rules
+- `/r/{subreddit}/{hot|new|top}.json` - Subreddit posts
+- `/r/{subreddit}/comments/{id}.json` - Post comments
+- `/r/{subreddit}/about/moderators.json` - Moderator list
+
+### User Endpoints
+
+- `/user/{username}/about.json` - User profile
+- `/user/{username}/submitted.json` - User submissions
+- `/user/{username}/submitted/{new|top}.json` - Sorted submissions
+- `/user/{username}/overview.json` - User overview
+- `/user/{username}/comments.json` - User comments
+
+### Search Endpoints
+
+- `/subreddits/search.json` - Search subreddits
+- `/api/search_reddit_names.json` - Search by name
+
+### Validation Rules
+
+1. **Protocol**: Must be `https://`
+2. **Host**: Must be `reddit.com` or `www.reddit.com`
+3. **Path**: Must match one of the regex patterns above
+4. **Subreddit names**: 3-21 alphanumeric characters + underscores
+5. **Usernames**: 3-20 alphanumeric characters + hyphens/underscores
+
+<Warning>
+  URLs not matching these patterns will return `400 Invalid or disallowed Reddit URL`
+</Warning>
+
+## Response
+
+The endpoint returns the JSON response from Reddit as-is.
+
+<ResponseField name="*" type="any">
+  Raw JSON response from Reddit's public API
+</ResponseField>
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Human-readable error message
+</ResponseField>
+
+<ResponseField name="details" type="string">
+  Additional error context (may be truncated to 500 chars)
+</ResponseField>
+
+### Common Error Codes
+
+| Status | Error | Description |
+|--------|-------|-------------|
+| 400 | Invalid or disallowed Reddit URL | URL doesn't match allowlist patterns |
+| 405 | Method not allowed | Only GET requests supported |
+| 502 | Reddit request failed (status) | Reddit API returned error (includes upstream status) |
+| 502 | Reddit returned invalid JSON | Response body was not valid JSON |
+| 502 | Failed to contact Reddit | Network error or timeout |
+
+## Example Requests
+
+### Get Subreddit Info
+
+```bash
+curl "https://api.subpirateapp.com/api/reddit/public?url=https://www.reddit.com/r/typescript/about.json"
+```
+
+**Response:**
+```json
+{
+  "kind": "t5",
+  "data": {
+    "display_name": "typescript",
+    "title": "TypeScript",
+    "public_description": "TypeScript is a language for application-scale JavaScript development",
+    "subscribers": 123456,
+    "created_utc": 1234567890.0,
+    "over18": false
+  }
+}
+```
+
+### Get Subreddit Rules
+
+```bash
+curl "https://api.subpirateapp.com/api/reddit/public?url=https://www.reddit.com/r/typescript/about/rules.json"
+```
+
+**Response:**
+```json
+{
+  "rules": [
+    {
+      "kind": "all",
+      "short_name": "Be respectful",
+      "description": "Treat others with respect",
+      "violation_reason": "Rule 1: Be respectful",
+      "priority": 0
+    }
+  ]
+}
+```
+
+### Get User Profile
+
+```bash
+curl "https://api.subpirateapp.com/api/reddit/public?url=https://www.reddit.com/user/spez/about.json"
+```
+
+### Get Top Posts
+
+```bash
+curl "https://api.subpirateapp.com/api/reddit/public?url=https://www.reddit.com/r/programming/top.json?t=week&limit=25"
+```
+
+<Info>
+  Query parameters (like `?t=week&limit=25`) are preserved and passed through to Reddit.
+</Info>
+
+### Search Subreddits
+
+```bash
+curl "https://api.subpirateapp.com/api/reddit/public?url=https://www.reddit.com/subreddits/search.json?q=javascript&limit=10"
+```
+
+## Implementation Details
+
+### User-Agent Header
+
+The proxy automatically adds a User-Agent header required by Reddit API:
+
+```
+User-Agent: web:SubPirate:1.0.0 (by /u/unknown)
+```
+
+Configurable via `REDDIT_USER_AGENT` environment variable.
+
+### App-Only OAuth
+
+The proxy uses Reddit's **app-only OAuth** flow (not user OAuth) via `redditFetch()` helper:
+
+1. Client credentials grant with `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET`
+2. Access token cached for 3600 seconds (1 hour)
+3. Automatic token refresh on expiry
+4. Higher rate limits than unauthenticated requests
+
+See `api/_lib/redditAppAuth.js` for implementation.
+
+### Rate Limiting
+
+The endpoint is subject to the global API rate limit:
+
+- **Window**: 15 minutes
+- **Max requests**: 300 per IP
+- **Headers**: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+
+Defined in server.js:166-174.
+
+### CORS Policy
+
+CORS is enabled for allowed origins only:
+
+- Configured via `CORS_ORIGINS` environment variable
+- Defaults to `http://localhost:5173,http://127.0.0.1:5173` in development
+- Returns `403 Origin not allowed` for unauthorized origins
+
+## Security Considerations
+
+<Warning>
+  The URL allowlist is **critical** for security. Never add wildcard patterns or overly permissive regex.
+</Warning>
+
+### Threat Model
+
+1. **Open Proxy Abuse**: Without allowlist, endpoint could be used to proxy arbitrary requests
+2. **Reddit ToS Violation**: Inconsistent User-Agent could get app banned
+3. **Rate Limit Exhaustion**: Malicious clients could exhaust Reddit API quota
+
+### Mitigations
+
+1. ✅ Strict regex validation (server.js:660-674)
+2. ✅ Host allowlist (`reddit.com`, `www.reddit.com` only)
+3. ✅ HTTPS enforcement
+4. ✅ Global rate limiting (300 req/15min)
+5. ✅ Consistent User-Agent header
+6. ✅ No sensitive endpoints in allowlist (no `/api/submit`, `/api/vote`, etc.)
+
+## Code References
+
+- **Server implementation**: server.js:1035-1060
+- **Serverless wrapper**: api/reddit/public.js:1-5
+- **URL validation**: api/_lib/redditPublic.js:4-38
+- **Reddit OAuth client**: api/_lib/redditAppAuth.js
+- **Allowlist patterns**: server.js:660-674
+
+## Related Endpoints
+
+- [POST /api/reddit/oauth/exchange](/api/reddit/oauth) - Exchange OAuth code for user tokens
+- [Campaign Run API](/api/campaigns) - Authenticated Reddit posting via campaigns

@@ -1,0 +1,74 @@
+---
+title: "Health Check"
+description: "Simple health check endpoint for monitoring and uptime verification"
+---
+
+## Overview
+
+The health check endpoint provides a simple way to verify that the SubPirate Pro API server is running and responsive. This endpoint is useful for monitoring tools, load balancers, and uptime checks.
+
+## Endpoint
+
+<ParamField path="GET /health" type="endpoint">
+  Returns the current health status of the API server
+</ParamField>
+
+## Authentication
+
+This endpoint does **not require authentication** and is publicly accessible.
+
+## Request
+
+```bash
+curl https://api.subpirate.com/health
+```
+
+## Response
+
+Returns a JSON object with the server status and current timestamp.
+
+<ResponseField name="status" type="string" required>
+  Always returns `"ok"` when the server is healthy
+</ResponseField>
+
+<ResponseField name="timestamp" type="string" required>
+  ISO 8601 timestamp of when the health check was performed
+</ResponseField>
+
+### Success Response (200)
+
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-03-02T10:30:45.123Z"
+}
+```
+
+## Use Cases
+
+### Monitoring
+
+Use this endpoint with monitoring services like:
+- Uptime Robot
+- Pingdom
+- StatusCake
+- Custom monitoring scripts
+
+### Load Balancer Health Checks
+
+Configure load balancers to poll this endpoint to determine if the server instance should receive traffic.
+
+### CI/CD Pipeline Verification
+
+Use in deployment pipelines to verify that a newly deployed instance is responsive before routing production traffic.
+
+## Error Handling
+
+If the endpoint is unreachable or returns a non-200 status code, the API server should be considered unhealthy.
+
+## Notes
+
+- This endpoint has no rate limiting
+- Response time should typically be < 100ms
+- Does not check database connectivity or external service availability
+- For more comprehensive health checks, consider implementing a `/health/deep` endpoint that verifies database and service connections

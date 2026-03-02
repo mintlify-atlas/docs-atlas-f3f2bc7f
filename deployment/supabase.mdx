@@ -1,0 +1,581 @@
+---
+title: 'Supabase Setup'
+description: 'Configure Supabase for authentication, database, and row-level security'
+---
+
+## Overview
+
+SubPirate Pro uses Supabase for:
+- **Authentication**: Email/password and Google OAuth with PKCE flow
+- **Database**: PostgreSQL with extensive Row-Level Security (RLS) policies
+- **Storage**: Profile images and campaign media
+
+The schema is defined via migrations in `supabase/migrations/` and uses RLS extensively to ensure data security.
+
+## Prerequisites
+
+- Supabase account (free tier available)
+- Supabase CLI v2.33.9 (for local development)
+- Docker (for local Supabase)
+
+<Warning>
+  This documentation assumes a **fresh** Supabase project. SubPirate Pro is designed to deploy into a new project. Treat any legacy keys as compromised.
+</Warning>
+
+## Creating a Supabase Project
+
+<Steps>
+  <Step title="Create new project">
+    1. Go to [supabase.com/dashboard](https://supabase.com/dashboard)
+    2. Click "New Project"
+    3. Enter project details:
+       - **Name**: SubPirate Pro
+       - **Database Password**: Generate a strong password
+       - **Region**: Choose closest to your users
+       - **Pricing Plan**: Start with Free tier
+    4. Wait for project provisioning (2-3 minutes)
+  </Step>
+
+  <Step title="Get API credentials">
+    Navigate to **Project Settings** → **API**:
+
+    - **Project URL**: Your Supabase project URL
+    - **anon/public key**: Safe for browser use
+    - **service_role key**: Server-only, never expose to browser
+
+    Copy these values for your environment variables.
+  </Step>
+
+  <Step title="Link local project">
+    Link your local repository to the Supabase project:
+
+    ```bash
+    supabase login
+    supabase link --project-ref <your-project-ref>
+    ```
+
+    The project ref is in your Project URL: `https://<project-ref>.supabase.co`
+  </Step>
+
+  <Step title="Push schema migrations">
+    Apply all migrations from the repository:
+
+    ```bash
+    supabase db push
+    ```
+
+    This creates all tables, RLS policies, triggers, and functions defined in `supabase/migrations/`.
+  </Step>
+</Steps>
+
+## Authentication Configuration
+
+### Email Authentication
+
+<Steps>
+  <Step title="Configure site URLs">
+    Go to **Authentication** → **URL Configuration**:
+
+    - **Site URL**: `https://your-domain.com`
+    - **Redirect URLs**: Add the following:
+      - `https://your-domain.com/auth/callback`
+      - `https://your-domain.com/auth/reset-password`
+      - `http://localhost:5173/auth/callback` (for local dev)
+      - `http://localhost:5173/auth/reset-password` (for local dev)
+  </Step>
+
+  <Step title="Configure email settings">
+    Go to **Authentication** → **Providers** → **Email**:
+
+    - **Enable Email provider**: ✓ Enabled
+    - **Confirm email**: ✓ Enabled (recommended)
+    - **Secure email change**: ✓ Enabled (recommended)
+
+    Customize email templates if desired (welcome, confirmation, password reset).
+  </Step>
+</Steps>
+
+### Google OAuth (Optional)
+
+<Steps>
+  <Step title="Create Google OAuth credentials">
+    1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+    2. Create a new project or select existing
+    3. Enable Google+ API
+    4. Go to **Credentials** → **Create Credentials** → **OAuth client ID**
+    5. Choose **Web application**
+    6. Add authorized redirect URIs:
+       - `https://<your-project-ref>.supabase.co/auth/v1/callback`
+    7. Copy Client ID and Client Secret
+  </Step>
+
+  <Step title="Configure in Supabase">
+    Go to **Authentication** → **Providers** → **Google**:
+
+    - **Enable Google provider**: ✓ Enabled
+    - **Client ID**: Paste from Google Console
+    - **Client Secret**: Paste from Google Console
+    - **Authorized Client IDs**: Leave empty (uses Client ID above)
+
+    Click **Save**.
+  </Step>
+</Steps>
+
+## Database Schema
+
+### Core Tables
+
+SubPirate Pro's schema includes the following key tables:
+
+#### Users & Profiles
+
+- **`profiles`**: User profiles (auto-created on signup via trigger)
+  - One-to-one with `auth.users`
+  - Stores display name and profile image
+  - RLS: Users can only select/update their own profile
+
+#### Reddit Integration
+
+- **`reddit_accounts`**: Connected Reddit accounts
+  - Links to `profiles` via `user_id`
+  - Stores account metadata (username, karma, created date)
+- **`reddit_account_tokens`**: Encrypted OAuth tokens
+  - Encrypted with AES-256-GCM using `TOKEN_ENCRYPTION_KEY`
+  - RLS: Tokens only accessible via service role (server-side)
+
+#### Projects & Organization
+
+- **`projects`**: User-created project containers
+- **`project_members`**: Team collaboration with roles (read/edit/owner)
+- **`project_subreddits`**: Subreddits organized into projects
+
+#### Subreddit Analysis
+
+- **`subreddits`**: Cached subreddit metadata
+- **`subreddit_analyses`**: LLM-generated marketing analysis
+- **`analysis_locks`**: Prevents duplicate concurrent analyses
+
+#### Campaign System
+
+- **`campaigns`**: Posting campaigns with scheduling
+- **`campaign_members`**: Role-based campaign access
+- **`campaign_content_versions`**: Version-controlled post content
+- **`campaign_runs`**: Execution history
+- **`campaign_run_attempts`**: Individual post attempts with results
+
+### Row-Level Security (RLS)
+
+Every table has RLS enabled with granular policies:
+
+```sql
+-- Example: profiles table RLS
+alter table public.profiles enable row level security;
+
+-- Users can select their own profile
+create policy profiles_select_own
+on public.profiles
+for select
+to authenticated
+using (id = auth.uid());
+
+-- Users can update their own profile
+create policy profiles_update_own
+on public.profiles
+for update
+to authenticated
+using (id = auth.uid())
+with check (id = auth.uid());
+```
+
+<Note>
+  RLS policies ensure users can only access their own data and data explicitly shared with them via project/campaign membership.
+</Note>
+
+### Auto-Generated Profile
+
+New users automatically get a profile via trigger:
+
+```sql
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+as $$
+begin
+  insert into public.profiles (id, display_name)
+  values (new.id, coalesce(new.raw_user_meta_data->>'display_name', new.email))
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute function public.handle_new_user();
+```
+
+## Schema Migrations
+
+Migrations live in `supabase/migrations/` and are applied in order:
+
+```
+supabase/migrations/
+├── 20260207053300_init.sql                              # Initial schema
+├── 20260213201000_campaigns_media_library.sql           # Media storage
+├── 20260214103000_normalize_subreddit_content_types.sql # Content types
+├── 20260214124000_optimize_rls_and_fk_indexes.sql       # Performance
+├── 20260214160000_campaigns_v2_runtime.sql              # Campaign engine
+├── 20260214170000_campaigns_v2_postdeploy_hardening.sql # Security
+├── 20260218120000_stripe_subscriptions.sql              # Payments
+├── 20260219120000_analysis_cache_lock.sql               # Analysis locks
+├── 20260219129000_add_tier_enum_values.sql              # Tier system
+├── 20260219130000_restructure_tiers.sql                 # Tier restructure
+├── 20260221183000_plan01_prevent_parallel_subscriptions.sql
+├── 20260221184000_plan02_webhook_identity_unmatched.sql
+├── 20260221185000_plan05_webhook_event_ledger.sql
+├── 20260221190000_plan06_fail_closed_entitlements.sql
+├── 20260221191000_harden_stripe_webhook_tables_rls.sql
+├── 20260222090000_unique_stripe_customer_id.sql
+├── 20260222103000_reddit_oauth_hardening.sql            # OAuth security
+├── 20260302100000_enforce_resource_limits_on_insert.sql # Limits
+├── 20260302123000_atomic_campaign_invite_accept.sql     # Invites
+├── 20260302124500_harden_analysis_lock_ownership.sql    # Lock security
+├── 20260302150000_admin_entitlement_bypass.sql          # Admin bypass
+└── 20260302153000_admin_email_allowlist.sql             # Admin emails
+```
+
+### Applying Migrations
+
+<Tabs>
+  <Tab title="Hosted Supabase">
+    Push migrations to your hosted project:
+
+    ```bash
+    supabase db push
+    ```
+
+    This applies all unapplied migrations.
+  </Tab>
+
+  <Tab title="Local Supabase">
+    Reset local database to match migrations:
+
+    ```bash
+    supabase db reset --local --yes
+    ```
+
+    This drops and recreates the database with all migrations.
+  </Tab>
+</Tabs>
+
+### Creating New Migrations
+
+To create a new migration:
+
+```bash
+supabase migration new your_migration_name
+```
+
+This creates a new SQL file in `supabase/migrations/` with a timestamp prefix.
+
+## Type Generation
+
+Generate TypeScript types from your database schema:
+
+<Tabs>
+  <Tab title="From Hosted Project">
+    ```bash
+    supabase gen types --linked --schema public --schema auth --schema storage > src/lib/database.types.ts
+    ```
+  </Tab>
+
+  <Tab title="From Local Project">
+    ```bash
+    supabase gen types --local --schema public --schema auth --schema storage > src/lib/database.types.ts
+    ```
+  </Tab>
+</Tabs>
+
+This generates TypeScript interfaces for all tables, views, and functions.
+
+<Tip>
+  Regenerate types after applying new migrations to keep your TypeScript definitions in sync.
+</Tip>
+
+## Storage Configuration
+
+Configure storage buckets for user uploads:
+
+<Steps>
+  <Step title="Create storage buckets">
+    Go to **Storage** in Supabase dashboard:
+
+    1. Create bucket: `profile-images`
+       - Public: ✓ Enabled
+       - File size limit: 2MB
+       - Allowed MIME types: `image/jpeg,image/png,image/webp`
+
+    2. Create bucket: `campaign-media`
+       - Public: ✓ Enabled
+       - File size limit: 10MB
+       - Allowed MIME types: `image/jpeg,image/png,image/webp,image/gif,video/mp4`
+  </Step>
+
+  <Step title="Configure RLS policies">
+    Add storage policies for access control:
+
+    ```sql
+    -- Users can upload to their own folder
+    create policy "Users can upload profile images"
+on storage.objects for insert
+to authenticated
+with check (
+  bucket_id = 'profile-images' and
+  (storage.foldername(name))[1] = auth.uid()::text
+);
+
+    -- Users can read all profile images
+    create policy "Anyone can view profile images"
+    on storage.objects for select
+    to public
+    using (bucket_id = 'profile-images');
+    ```
+  </Step>
+</Steps>
+
+## Local Development
+
+### Starting Local Supabase
+
+Run a complete local Supabase stack with Docker:
+
+```bash
+supabase start
+```
+
+This starts:
+- PostgreSQL database (port 54322)
+- API gateway (port 54321)
+- Studio UI (port 54323)
+- Inbucket email server (port 54324)
+- Edge Functions runtime (port 54321)
+
+### Viewing Local Services
+
+After starting, access:
+
+- **Supabase Studio**: `http://127.0.0.1:54323`
+- **API**: `http://127.0.0.1:54321`
+- **Email inbox**: `http://127.0.0.1:54324` (view auth emails)
+
+### Resetting Local Database
+
+Reset to a clean state matching migrations:
+
+```bash
+supabase db reset --local --yes
+```
+
+### Linting Schema
+
+Check for common schema issues:
+
+```bash
+supabase db lint
+```
+
+This validates:
+- RLS policies on all tables
+- Index coverage for foreign keys
+- Function security settings
+
+## Environment Variables
+
+### For Application
+
+Set these in your `.env` file:
+
+```bash
+# Client (public - safe for browser)
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon key from dashboard>
+
+# Server (private - never expose)
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=<anon key from dashboard>
+SUPABASE_SERVICE_ROLE_KEY=<service role key from dashboard>
+```
+
+<Warning>
+  **Never** expose `SUPABASE_SERVICE_ROLE_KEY` to the browser. This key bypasses RLS and has full database access.
+</Warning>
+
+### For Supabase CLI
+
+Optionally set for CLI commands:
+
+```bash
+SUPABASE_ACCESS_TOKEN=<personal access token>
+SUPABASE_DB_PASSWORD=<database password>
+```
+
+## Security Best Practices
+
+### Row-Level Security
+
+<AccordionGroup>
+  <Accordion title="Always enable RLS">
+    Every table must have RLS enabled:
+
+    ```sql
+    alter table public.your_table enable row level security;
+    ```
+
+    Without RLS, tables are accessible by anyone with the anon key.
+  </Accordion>
+
+  <Accordion title="Use auth.uid() for ownership">
+    Filter by authenticated user:
+
+    ```sql
+    create policy "Users see own records"
+    on public.your_table
+    for select
+    to authenticated
+    using (user_id = auth.uid());
+    ```
+  </Accordion>
+
+  <Accordion title="Test RLS policies">
+    Verify policies work as expected:
+
+    ```sql
+    -- Switch to anon role
+    set role anon;
+    set request.jwt.claims to '{"sub":"user-id-here"}';
+
+    -- Try to select data
+    select * from public.your_table;
+
+    -- Reset role
+    reset role;
+    ```
+  </Accordion>
+
+  <Accordion title="Use security definer carefully">
+    Functions marked `security definer` run with creator's privileges:
+
+    ```sql
+    create or replace function public.your_function()
+    returns void
+    language plpgsql
+    security definer  -- Runs as creator, not caller
+    set search_path = public  -- Prevent search_path attacks
+    as $$
+    begin
+      -- Your logic
+    end;
+    $$;
+    ```
+
+    Always set `search_path` to prevent attacks.
+  </Accordion>
+</AccordionGroup>
+
+### Token Security
+
+- **anon key**: Safe for browser, respects RLS
+- **service_role key**: Server-only, bypasses RLS, never expose
+- **Refresh tokens**: SubPirate stores Reddit refresh tokens encrypted with AES-256-GCM
+
+### Authentication Security
+
+- Enable email confirmation in production
+- Use PKCE flow for OAuth (already configured)
+- Set appropriate session timeouts
+- Configure password strength requirements
+
+## Monitoring & Maintenance
+
+### Database Stats
+
+View database statistics in **Database** → **Statistics**:
+
+- Table sizes
+- Index usage
+- Query performance
+- Connection pool status
+
+### Logs
+
+View logs in **Logs** → **Postgres Logs**:
+
+- Slow queries (>1s)
+- Connection errors
+- RLS policy violations
+- Function errors
+
+### Backups
+
+Supabase provides automatic backups on paid plans:
+
+- **Free**: Daily backups (7 day retention)
+- **Pro**: Daily backups (30 day retention)
+- **Team/Enterprise**: Configurable retention
+
+Manual backups:
+
+```bash
+supabase db dump -f backup.sql
+```
+
+## Troubleshooting
+
+### RLS policy errors
+
+**Problem**: Queries fail with "new row violates row-level security policy"
+
+**Solution**:
+1. Check which policy is failing
+2. Verify `auth.uid()` returns expected user ID
+3. Test policy with direct SQL
+4. Ensure `with check` clause allows the operation
+
+### Migration conflicts
+
+**Problem**: `supabase db push` fails with conflict errors
+
+**Solution**:
+1. Check migration history: `supabase migration list`
+2. Repair if needed: `supabase migration repair --status applied <version>`
+3. Or reset: `supabase db reset --local --yes` (local only)
+
+### Connection issues
+
+**Problem**: Cannot connect to Supabase
+
+**Solution**:
+1. Verify project is not paused (free tier pauses after inactivity)
+2. Check API credentials are correct
+3. Test with curl: `curl https://your-project.supabase.co/rest/v1/`
+4. Check Supabase status page: `status.supabase.com`
+
+### Type generation failures
+
+**Problem**: `supabase gen types` fails
+
+**Solution**:
+1. Ensure migrations are applied: `supabase db push`
+2. Check for syntax errors in migrations
+3. Verify CLI version: `supabase --version` (use v2.33.9)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Local Development" icon="code" href="/deployment/local-development">
+    Set up local environment
+  </Card>
+  <Card title="Vercel Deployment" icon="rocket" href="/deployment/vercel">
+    Deploy to production
+  </Card>
+</CardGroup>

@@ -1,0 +1,372 @@
+---
+title: "Admin Plan Management"
+description: "Admin endpoints for managing subscription plans and pricing tiers"
+---
+
+## Overview
+
+These endpoints allow administrators to view and update subscription plan configurations. Access is restricted to users with the `is_admin` flag set to `true` in their profile.
+
+## Authentication
+
+All admin endpoints require:
+1. **Valid authentication** via Bearer token (Supabase JWT)
+2. **Admin privileges** - user must have `is_admin = true` in the `profiles` table
+
+### Admin Authentication Example
+
+```bash
+curl https://api.subpirate.com/api/admin/plans \
+  -H "Authorization: Bearer YOUR_SUPABASE_JWT_TOKEN"
+```
+
+## Get All Plans
+
+<ParamField path="GET /api/admin/plans" type="endpoint">
+  Retrieve all subscription plans including hidden plans
+</ParamField>
+
+### Request
+
+```bash
+curl https://api.subpirate.com/api/admin/plans \
+  -H "Authorization: Bearer YOUR_SUPABASE_JWT_TOKEN"
+```
+
+### Response
+
+Returns all plans from the `plan_definitions` table, ordered by `sort_order`.
+
+<ResponseField name="plans" type="array" required>
+  Array of plan definition objects
+</ResponseField>
+
+<ResponseField name="plans[].tier" type="string" required>
+  Plan tier identifier (e.g., `"free"`, `"pro"`, `"enterprise"`)
+</ResponseField>
+
+<ResponseField name="plans[].name" type="string" required>
+  Display name of the plan
+</ResponseField>
+
+<ResponseField name="plans[].description" type="string">
+  Plan description text
+</ResponseField>
+
+<ResponseField name="plans[].price_monthly_cents" type="number">
+  Monthly price in cents (e.g., `2900` for $29.00)
+</ResponseField>
+
+<ResponseField name="plans[].price_annual_cents" type="number">
+  Annual price in cents
+</ResponseField>
+
+<ResponseField name="plans[].max_analyses_per_month" type="number">
+  Maximum subreddit analyses allowed per month
+</ResponseField>
+
+<ResponseField name="plans[].max_reddit_accounts" type="number">
+  Maximum connected Reddit accounts
+</ResponseField>
+
+<ResponseField name="plans[].max_campaigns" type="number">
+  Maximum active campaigns
+</ResponseField>
+
+<ResponseField name="plans[].max_projects" type="number">
+  Maximum projects
+</ResponseField>
+
+<ResponseField name="plans[].has_ai_posting_scheduler" type="boolean">
+  Whether AI posting scheduler is enabled
+</ResponseField>
+
+<ResponseField name="plans[].has_advanced_competitor_dashboard" type="boolean">
+  Whether advanced competitor dashboard is enabled
+</ResponseField>
+
+<ResponseField name="plans[].has_team_access" type="boolean">
+  Whether team collaboration features are enabled
+</ResponseField>
+
+<ResponseField name="plans[].features" type="array">
+  Array of feature descriptions for display
+</ResponseField>
+
+<ResponseField name="plans[].badge_text" type="string">
+  Badge text (e.g., `"Most Popular"`)
+</ResponseField>
+
+<ResponseField name="plans[].cta_text" type="string">
+  Call-to-action button text
+</ResponseField>
+
+<ResponseField name="plans[].cta_url" type="string">
+  Call-to-action URL
+</ResponseField>
+
+<ResponseField name="plans[].is_contact_only" type="boolean">
+  Whether this plan requires contacting sales
+</ResponseField>
+
+<ResponseField name="plans[].is_visible" type="boolean">
+  Whether plan is visible to public users
+</ResponseField>
+
+<ResponseField name="plans[].sort_order" type="number">
+  Display order (lower numbers first)
+</ResponseField>
+
+### Success Response (200)
+
+```json
+{
+  "plans": [
+    {
+      "tier": "free",
+      "name": "Free",
+      "description": "Perfect for getting started",
+      "price_monthly_cents": 0,
+      "price_annual_cents": 0,
+      "max_analyses_per_month": 5,
+      "max_reddit_accounts": 1,
+      "max_campaigns": 1,
+      "max_projects": 3,
+      "has_ai_posting_scheduler": false,
+      "has_advanced_competitor_dashboard": false,
+      "has_team_access": false,
+      "features": ["5 subreddit analyses/month", "1 Reddit account"],
+      "badge_text": null,
+      "cta_text": "Get Started",
+      "cta_url": "/signup",
+      "is_contact_only": false,
+      "is_visible": true,
+      "sort_order": 1
+    },
+    {
+      "tier": "pro",
+      "name": "Pro",
+      "description": "For serious Reddit marketers",
+      "price_monthly_cents": 2900,
+      "price_annual_cents": 29000,
+      "max_analyses_per_month": 100,
+      "max_reddit_accounts": 5,
+      "max_campaigns": 10,
+      "max_projects": 20,
+      "has_ai_posting_scheduler": true,
+      "has_advanced_competitor_dashboard": true,
+      "has_team_access": false,
+      "features": ["100 analyses/month", "AI posting scheduler"],
+      "badge_text": "Most Popular",
+      "cta_text": "Start Free Trial",
+      "cta_url": "/pricing",
+      "is_contact_only": false,
+      "is_visible": true,
+      "sort_order": 2
+    }
+  ]
+}
+```
+
+## Update Plan
+
+<ParamField path="PUT /api/admin/plans/:tier" type="endpoint">
+  Update an existing subscription plan
+</ParamField>
+
+### Path Parameters
+
+<ParamField path="tier" type="string" required>
+  The tier identifier of the plan to update (e.g., `"pro"`, `"enterprise"`)
+</ParamField>
+
+### Request Body
+
+Provide only the fields you want to update. All fields are optional.
+
+<ParamField body="name" type="string">
+  Plan display name
+</ParamField>
+
+<ParamField body="description" type="string">
+  Plan description
+</ParamField>
+
+<ParamField body="price_monthly_cents" type="number">
+  Monthly price in cents
+</ParamField>
+
+<ParamField body="price_annual_cents" type="number">
+  Annual price in cents
+</ParamField>
+
+<ParamField body="max_analyses_per_month" type="number">
+  Maximum analyses per month
+</ParamField>
+
+<ParamField body="max_reddit_accounts" type="number">
+  Maximum Reddit accounts
+</ParamField>
+
+<ParamField body="max_campaigns" type="number">
+  Maximum campaigns
+</ParamField>
+
+<ParamField body="max_projects" type="number">
+  Maximum projects
+</ParamField>
+
+<ParamField body="has_ai_posting_scheduler" type="boolean">
+  Enable AI posting scheduler
+</ParamField>
+
+<ParamField body="has_advanced_competitor_dashboard" type="boolean">
+  Enable advanced competitor dashboard
+</ParamField>
+
+<ParamField body="has_team_access" type="boolean">
+  Enable team collaboration features
+</ParamField>
+
+<ParamField body="features" type="array">
+  Array of feature strings for display
+</ParamField>
+
+<ParamField body="badge_text" type="string">
+  Badge text (e.g., "Most Popular")
+</ParamField>
+
+<ParamField body="cta_text" type="string">
+  Call-to-action button text
+</ParamField>
+
+<ParamField body="cta_url" type="string">
+  Call-to-action URL
+</ParamField>
+
+<ParamField body="is_contact_only" type="boolean">
+  Whether plan requires contacting sales
+</ParamField>
+
+<ParamField body="is_visible" type="boolean">
+  Whether plan is visible to public
+</ParamField>
+
+<ParamField body="sort_order" type="number">
+  Display order
+</ParamField>
+
+### Request Example
+
+```bash
+curl -X PUT https://api.subpirate.com/api/admin/plans/pro \
+  -H "Authorization: Bearer YOUR_SUPABASE_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "price_monthly_cents": 3900,
+    "max_analyses_per_month": 150,
+    "badge_text": "Best Value"
+  }'
+```
+
+### Response
+
+Returns the updated plan object.
+
+<ResponseField name="plan" type="object" required>
+  The updated plan definition object with all fields
+</ResponseField>
+
+### Success Response (200)
+
+```json
+{
+  "plan": {
+    "tier": "pro",
+    "name": "Pro",
+    "description": "For serious Reddit marketers",
+    "price_monthly_cents": 3900,
+    "price_annual_cents": 29000,
+    "max_analyses_per_month": 150,
+    "max_reddit_accounts": 5,
+    "max_campaigns": 10,
+    "max_projects": 20,
+    "has_ai_posting_scheduler": true,
+    "has_advanced_competitor_dashboard": true,
+    "has_team_access": false,
+    "features": ["150 analyses/month", "AI posting scheduler"],
+    "badge_text": "Best Value",
+    "cta_text": "Start Free Trial",
+    "cta_url": "/pricing",
+    "is_contact_only": false,
+    "is_visible": true,
+    "sort_order": 2,
+    "updated_at": "2026-03-02T10:35:00.000Z"
+  }
+}
+```
+
+## Error Responses
+
+### 401 Unauthorized
+
+Returned when no valid authentication token is provided.
+
+```json
+{
+  "error": "Missing Authorization bearer token"
+}
+```
+
+### 403 Forbidden
+
+Returned when the authenticated user does not have admin privileges.
+
+```json
+{
+  "error": "Admin access required"
+}
+```
+
+### 400 Bad Request
+
+Returned when the request is malformed or missing required parameters.
+
+```json
+{
+  "error": "No valid fields to update"
+}
+```
+
+### 404 Not Found
+
+Returned when attempting to update a plan tier that doesn't exist.
+
+```json
+{
+  "error": "Plan tier not found"
+}
+```
+
+### 500 Internal Server Error
+
+```json
+{
+  "error": "Failed to load plans"
+}
+```
+
+## Notes
+
+- The `tier` field cannot be changed via this endpoint (it's the primary key)
+- The `updated_at` timestamp is automatically set when updating a plan
+- Changes to plan definitions affect all users immediately
+- Consider caching implications when updating pricing or limits
+- Always test changes in a non-production environment first
+
+## Security Considerations
+
+- Admin endpoints use the service role Supabase client to bypass RLS
+- Ensure the `is_admin` flag in the `profiles` table is properly secured
+- Audit all admin actions for compliance and security monitoring
+- Implement additional logging for plan changes in production

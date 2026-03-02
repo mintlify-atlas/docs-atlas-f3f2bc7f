@@ -1,0 +1,206 @@
+---
+title: "List Reddit Accounts"
+api: "GET reddit_accounts (Supabase Direct)"
+description: "Retrieve connected Reddit accounts for the authenticated user"
+---
+
+## Overview
+
+SubPirate does not provide a dedicated REST endpoint for listing Reddit accounts. Instead, the frontend queries the `reddit_accounts` Supabase table directly using the Supabase client with RLS (Row-Level Security) enforcing user ownership.
+
+<Warning>
+  This endpoint does not exist at the API server level. Use Supabase client queries instead.
+</Warning>
+
+## Direct Supabase Query
+
+The frontend uses the Supabase JavaScript client to query `reddit_accounts` table:
+
+```typescript
+import { supabase } from './lib/supabase';
+
+const { data, error } = await supabase
+  .from('reddit_accounts')
+  .select('id, username, avatar_url, karma_score, last_connected_at')
+  .eq('user_id', user.id)
+  .order('last_connected_at', { ascending: false });
+```
+
+## Authentication
+
+Row-level security policies enforce that users can only read their own accounts. The Supabase client automatically includes the user's JWT token in all requests.
+
+## Table Schema
+
+The `reddit_accounts` table contains:
+
+<ResponseField name="id" type="uuid">
+  Primary key
+</ResponseField>
+
+<ResponseField name="user_id" type="uuid">
+  Foreign key to auth.users (indexed)
+</ResponseField>
+
+<ResponseField name="reddit_user_id" type="text">
+  Reddit's internal user ID (e.g. "t2_abc123")
+</ResponseField>
+
+<ResponseField name="username" type="text">
+  Reddit username without "u/" prefix
+</ResponseField>
+
+<ResponseField name="avatar_url" type="text">
+  Reddit profile avatar URL (nullable)
+</ResponseField>
+
+<ResponseField name="karma_score" type="integer">
+  Total karma (link + comment karma)
+</ResponseField>
+
+<ResponseField name="link_karma" type="integer">
+  Post karma
+</ResponseField>
+
+<ResponseField name="comment_karma" type="integer">
+  Comment karma
+</ResponseField>
+
+<ResponseField name="last_connected_at" type="timestamptz">
+  Last successful OAuth connection
+</ResponseField>
+
+<ResponseField name="created_at" type="timestamptz">
+  Account creation timestamp
+</ResponseField>
+
+<ResponseField name="updated_at" type="timestamptz">
+  Last update timestamp
+</ResponseField>
+
+## Row-Level Security (RLS)
+
+The `reddit_accounts` table has RLS enabled with policies:
+
+### SELECT Policy
+```sql
+CREATE POLICY "Users can view their own reddit accounts"
+  ON reddit_accounts
+  FOR SELECT
+  USING (auth.uid() = user_id);
+```
+
+### INSERT Policy
+```sql
+CREATE POLICY "Users can insert their own reddit accounts"
+  ON reddit_accounts
+  FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+```
+
+### UPDATE Policy
+```sql
+CREATE POLICY "Users can update their own reddit accounts"
+  ON reddit_accounts
+  FOR UPDATE
+  USING (auth.uid() = user_id);
+```
+
+### DELETE Policy
+```sql
+CREATE POLICY "Users can delete their own reddit accounts"
+  ON reddit_accounts
+  FOR DELETE
+  USING (auth.uid() = user_id);
+```
+
+## Example Usage
+
+### List All Accounts
+
+```typescript
+const { data: accounts, error } = await supabase
+  .from('reddit_accounts')
+  .select('*')
+  .order('last_connected_at', { ascending: false });
+
+if (error) {
+  console.error('Failed to fetch accounts:', error);
+} else {
+  console.log('Connected accounts:', accounts);
+}
+```
+
+### Check If User Has Accounts
+
+```typescript
+const { data, error } = await supabase
+  .from('reddit_accounts')
+  .select('id')
+  .limit(1);
+
+const hasAccounts = Boolean(data?.length);
+```
+
+### Get Account by ID
+
+```typescript
+const { data: account, error } = await supabase
+  .from('reddit_accounts')
+  .select('id, username, avatar_url, karma_score')
+  .eq('id', accountId)
+  .maybeSingle();
+```
+
+## Related Tables
+
+### reddit_account_tokens
+
+Encrypted OAuth tokens are stored separately in `reddit_account_tokens`:
+
+- `reddit_account_id` (FK to reddit_accounts.id, unique)
+- `user_id` (FK to auth.users.id)
+- `access_token_enc` (encrypted)
+- `refresh_token_enc` (encrypted)
+- `scope` (text array)
+- `token_expires_at` (timestamptz)
+
+<Warning>
+  Tokens are **never** exposed to the frontend. Server-side API routes decrypt tokens as needed for Reddit API calls.
+</Warning>
+
+### campaign_reddit_accounts
+
+Links Reddit accounts to campaigns:
+
+- `campaign_id` (FK to campaigns.id)
+- `reddit_account_id` (FK to reddit_accounts.id)
+- `is_active` (boolean)
+- `health_status` (enum: 'healthy', 'warning', 'error', 'disabled')
+- `consecutive_failures` (integer)
+- `disabled_until` (timestamptz, nullable)
+
+## Subscription Limits
+
+The number of Reddit accounts a user can connect is determined by their subscription tier:
+
+| Tier | Max Accounts |
+|------|-------------|
+| Free | 0 |
+| Basic | 1 |
+| Pro | 3 |
+| Enterprise | 10 |
+
+Limits are enforced by the `upsert_reddit_account_with_limit` stored procedure when connecting new accounts via `/api/reddit/oauth/exchange`.
+
+## Implementation Reference
+
+See `RedditAccountContext.tsx:48-52` for the production implementation:
+
+```typescript
+const { data, error } = await supabase
+  .from('reddit_accounts')
+  .select('id')
+  .eq('user_id', user.id)
+  .limit(1);
+```

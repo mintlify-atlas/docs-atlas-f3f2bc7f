@@ -1,0 +1,269 @@
+---
+title: Authentication
+description: Supabase Auth with PKCE flow, OAuth providers, and secure session management
+---
+
+## Overview
+
+SubPirate uses **Supabase Auth** as its authentication layer, implementing modern security best practices including PKCE (Proof Key for Code Exchange) flow, automatic session refresh, and secure profile management.
+
+## Authentication Architecture
+
+### PKCE Flow
+
+All authentication flows use **PKCE** (RFC 7636) to prevent authorization code interception attacks:
+
+```typescript
+// src/lib/supabase.ts
+export const supabase = createClient<Database>(supabaseUrl, supabaseKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false, // Manual code exchange for better control
+    flowType: 'pkce', // PKCE flow for enhanced security
+    debug: import.meta.env.DEV,
+  },
+});
+```
+
+<Warning>
+  **Why PKCE?** PKCE eliminates the need to transmit client secrets in public clients (SPAs, mobile apps). The authorization code can only be exchanged by the client that initiated the flow, preventing man-in-the-middle attacks.
+</Warning>
+
+### Session Management
+
+- **Auto-refresh**: Access tokens automatically refresh before expiration
+- **Persistent sessions**: Sessions persist across browser restarts using secure `localStorage`
+- **Manual code exchange**: `detectSessionInUrl: false` prevents race conditions during OAuth callbacks
+
+## Supported Authentication Methods
+
+### Email/Password Authentication
+
+#### Sign Up
+
+```typescript
+const { data, error } = await supabase.auth.signUp({ 
+  email, 
+  password,
+  options: {
+    emailRedirectTo: `${window.location.origin}/auth/callback`
+  }
+});
+```
+
+**Security features:**
+- Minimum 6-character password requirement
+- Email confirmation required (configurable)
+- Password reset via secure email link
+- Rate limiting on failed attempts
+
+#### Sign In
+
+```typescript
+const { data, error } = await supabase.auth.signInWithPassword({ 
+  email, 
+  password 
+});
+```
+
+**Error handling**: All auth errors are formatted to user-friendly messages (see `formatAuthError()` in `src/contexts/AuthContext.tsx:76-99`).
+
+### Google OAuth
+
+Google OAuth uses PKCE flow with offline access for refresh tokens:
+
+```typescript
+const { data, error } = await supabase.auth.signInWithOAuth({
+  provider: 'google',
+  options: {
+    redirectTo: `${window.location.origin}/auth/callback`,
+    queryParams: {
+      access_type: 'offline', // Request refresh token
+      prompt: 'select_account', // Always show account picker
+    },
+    skipBrowserRedirect: false
+  }
+});
+```
+
+**OAuth Callback Flow:**
+1. User initiates Google OAuth → redirected to Google
+2. User authorizes → redirected to `/auth/callback` with authorization code
+3. Client exchanges code for session using PKCE verifier
+4. Profile auto-created via database trigger
+
+## Profile Auto-Creation
+
+User profiles are automatically created on signup via a **database trigger**:
+
+```sql
+-- From supabase/migrations/20260207053300_init.sql:61-78
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id, display_name)
+  VALUES (new.id, COALESCE(new.raw_user_meta_data->>'display_name', new.email))
+  ON CONFLICT (id) DO NOTHING;
+  RETURN new;
+END;
+$$;
+
+CREATE TRIGGER on_auth_user_created
+AFTER INSERT ON auth.users
+FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+```
+
+**Profile fields:**
+- `id`: UUID matching `auth.users.id`
+- `display_name`: From OAuth metadata or email
+- `image_url`: User avatar (optional)
+- `created_at` / `updated_at`: Timestamps
+
+## Row-Level Security (RLS)
+
+Profiles are protected by RLS policies ensuring users can only access their own data:
+
+```sql
+-- Users can only read their own profile
+CREATE POLICY profiles_select_own
+ON public.profiles
+FOR SELECT
+TO authenticated
+USING (id = (SELECT auth.uid()));
+
+-- Users can only update their own profile
+CREATE POLICY profiles_update_own
+ON public.profiles
+FOR UPDATE
+TO authenticated
+USING (id = (SELECT auth.uid()))
+WITH CHECK (id = (SELECT auth.uid()));
+```
+
+<Info>
+  All database tables use similar RLS patterns. See [Data Encryption](/security/data-encryption) for details on encrypted data access.
+</Info>
+
+## Password Reset Flow
+
+```typescript
+await supabase.auth.resetPasswordForEmail(email, {
+  redirectTo: `${window.location.origin}/auth/reset-password`,
+});
+```
+
+1. User requests password reset
+2. Secure token sent via email
+3. User redirected to reset page with token
+4. New password set via `supabase.auth.updateUser({ password })`
+
+<Warning>
+  Password reset tokens expire after **1 hour**. Rate limiting applies to prevent abuse.
+</Warning>
+
+## Auth State Management
+
+The `AuthContext` (src/contexts/AuthContext.tsx) manages authentication state:
+
+```typescript
+interface AuthContextType {
+  user: User | null;           // Current authenticated user
+  profile: Profile | null;     // User profile data
+  loading: boolean;            // Auth initialization state
+  error: string | null;        // User-friendly error messages
+  signIn: (email, password) => Promise<...>;
+  signUp: (email, password) => Promise<...>;
+  signInWithGoogle: () => Promise<...>;
+  signOut: () => Promise<void>;
+  updateProfile: (data) => Promise<void>;
+  sendPasswordResetEmail: (email) => Promise<void>;
+}
+```
+
+**State listeners**: The context subscribes to auth state changes:
+
+```typescript
+supabase.auth.onAuthStateChange((event, session) => {
+  const currentUser = session?.user ?? null;
+  setUser(currentUser);
+  if (currentUser) {
+    fetchProfile(currentUser.id);
+  }
+});
+```
+
+## Security Headers
+
+All API requests include the application identifier:
+
+```typescript
+global: {
+  headers: {
+    'x-application-name': 'subpirate',
+  },
+}
+```
+
+## API Authentication
+
+Server-side API routes verify authentication via JWT:
+
+```javascript
+// api/_lib/auth.js
+async function verifySupabaseToken(token) {
+  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !user) throw new Error('Unauthorized');
+  return user;
+}
+```
+
+**Request flow:**
+1. Frontend attaches JWT via `secureFetch()` helper
+2. Server extracts token from `Authorization` header
+3. Token verified against Supabase (cached for performance)
+4. User ID available for database queries with RLS context
+
+<Info>
+  The JWT contains the user's `sub` (subject) claim, which matches their database UUID. This enables RLS policies to filter data automatically.
+</Info>
+
+## Development-Only: Local Admin Mode
+
+For local development without Supabase, a bypass mode is available:
+
+```bash
+# .env.local
+VITE_LOCAL_ADMIN_BYPASS=1
+VITE_LOCAL_ADMIN_TOKEN=your-dev-token
+```
+
+<Warning>
+  **Production Safety**: This mode is **disabled in production** via environment checks. Never deploy with `LOCAL_ADMIN_BYPASS` enabled.
+</Warning>
+
+## Best Practices
+
+### For Developers
+
+- **Never bypass RLS**: Always use authenticated Supabase client
+- **Use `secureFetch()`**: Don't manually manage tokens
+- **Handle auth errors gracefully**: Display user-friendly messages
+- **Test auth flows**: Verify PKCE, email confirmation, password reset
+
+### For Deployment
+
+- **Rotate secrets**: Change `JWT_SECRET` if ever exposed
+- **Enable email confirmation**: Prevent fake account creation
+- **Configure OAuth providers**: Use production redirect URLs
+- **Monitor failed auth attempts**: Set up alerts for suspicious activity
+
+## Related Documentation
+
+- [Data Encryption](/security/data-encryption) - Token encryption and key management
+- [GDPR Compliance](/security/gdpr-compliance) - Data access and deletion rights
+- [API Reference](/api-reference/authentication) - Auth endpoints

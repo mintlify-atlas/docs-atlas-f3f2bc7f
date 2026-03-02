@@ -1,0 +1,352 @@
+---
+title: Data Encryption
+description: AES-256-GCM encryption for Reddit tokens and sensitive credentials
+---
+
+## Overview
+
+SubPirate encrypts all sensitive credentials **at rest** using **AES-256-GCM** (Galois/Counter Mode), providing both confidentiality and authenticity. This ensures that even with database access, encrypted tokens cannot be read or tampered with.
+
+## What We Encrypt
+
+### Reddit OAuth Tokens
+
+All Reddit OAuth tokens are encrypted before storage:
+
+- **Access tokens** - Short-lived tokens for Reddit API calls
+- **Refresh tokens** - Long-lived tokens for obtaining new access tokens
+
+Tokens are stored in the `reddit_account_tokens` table with row-level security (RLS) ensuring users can only access their own encrypted tokens.
+
+### Encryption Algorithm: AES-256-GCM
+
+**Why AES-256-GCM?**
+- **AES-256**: Industry-standard symmetric encryption with 256-bit keys
+- **GCM mode**: Provides authenticated encryption (AEAD)
+- **Authentication tag**: Detects tampering or corruption
+- **Performance**: Hardware-accelerated on modern CPUs
+
+<Info>
+  GCM mode ensures that encrypted data cannot be modified without detection. Any tampering causes decryption to fail, preventing attacks that rely on ciphertext manipulation.
+</Info>
+
+## Encryption Implementation
+
+### Key Generation
+
+The encryption key **must** be a base64-encoded 32-byte random value:
+
+```bash
+# Generate a secure encryption key
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+Store this in your environment:
+
+```bash
+# .env (server-side only)
+TOKEN_ENCRYPTION_KEY=your-base64-encoded-32-byte-key
+```
+
+<Warning>
+  **Never commit `TOKEN_ENCRYPTION_KEY` to version control.** This key protects all encrypted credentials. If exposed, rotate immediately and re-encrypt all tokens.
+</Warning>
+
+### Encryption Code
+
+From `api/_lib/crypto.js`:
+
+```javascript
+import crypto from 'crypto';
+
+function getKeyBytes() {
+  const raw = process.env.TOKEN_ENCRYPTION_KEY;
+  if (!raw) {
+    throw new Error('TOKEN_ENCRYPTION_KEY is not configured');
+  }
+  const key = Buffer.from(String(raw), 'base64');
+  if (key.length !== 32) {
+    throw new Error('TOKEN_ENCRYPTION_KEY must be base64-encoded 32 bytes (AES-256-GCM)');
+  }
+  return key;
+}
+
+export function encryptString(plaintext) {
+  const key = getKeyBytes();
+  const iv = crypto.randomBytes(12); // 96-bit IV for GCM
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const ciphertext = Buffer.concat([
+    cipher.update(String(plaintext), 'utf8'),
+    cipher.final()
+  ]);
+  const tag = cipher.getAuthTag(); // 128-bit authentication tag
+
+  // Self-contained format: iv.tag.ciphertext (base64)
+  return [iv, tag, ciphertext]
+    .map((b) => b.toString('base64'))
+    .join('.');
+}
+```
+
+**Encryption process:**
+1. Generate random 12-byte IV (initialization vector)
+2. Encrypt plaintext with AES-256-GCM
+3. Extract authentication tag
+4. Encode all parts as base64, joined by `.`
+
+**Encrypted format:** `<iv>.<tag>.<ciphertext>`
+
+Example: `7xK2h/Fg3n4PLwQ1.nY8J+vX2QzA5M/tC6bE9.dGVzdCBlbmNyeXB0ZWQgZGF0YQ==`
+
+### Decryption Code
+
+```javascript
+function decryptParts(ivB64, tagB64, cipherB64) {
+  const key = getKeyBytes();
+  const iv = Buffer.from(ivB64, 'base64');
+  const tag = Buffer.from(tagB64, 'base64');
+  const ciphertext = Buffer.from(cipherB64, 'base64');
+
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(tag);
+  const plaintext = Buffer.concat([
+    decipher.update(ciphertext),
+    decipher.final() // Throws if tag verification fails
+  ]);
+  return plaintext.toString('utf8');
+}
+
+export function decryptString(encoded) {
+  const raw = String(encoded || '').trim();
+  if (!raw) {
+    throw new Error('Missing encrypted payload');
+  }
+
+  // New format: iv.tag.ciphertext
+  const dotted = raw.split('.');
+  if (dotted.length === 3) {
+    return decryptParts(dotted[0], dotted[1], dotted[2]);
+  }
+
+  // Legacy format from Express runtime: v1:iv:tag:ciphertext
+  const legacy = raw.split(':');
+  if (legacy.length === 4 && legacy[0] === 'v1') {
+    return decryptParts(legacy[1], legacy[2], legacy[3]);
+  }
+
+  throw new Error('Unsupported encrypted payload format');
+}
+```
+
+**Decryption process:**
+1. Parse base64-encoded IV, tag, and ciphertext
+2. Initialize decipher with key and IV
+3. Set authentication tag
+4. Decrypt and verify (fails if tampered)
+
+<Warning>
+  **Authentication is critical**: If the authentication tag doesn't match, decryption throws an error. This prevents using modified or corrupted ciphertext.
+</Warning>
+
+## Token Storage Flow
+
+### Storing Reddit Tokens (Encryption)
+
+```javascript
+// api/reddit/oauth/exchange.js (conceptual)
+import { encryptString } from '../_lib/crypto.js';
+
+// After Reddit OAuth exchange
+const { access_token, refresh_token } = await redditTokenResponse.json();
+
+// Encrypt before database insert
+const encryptedAccessToken = encryptString(access_token);
+const encryptedRefreshToken = encryptString(refresh_token);
+
+await supabaseAdmin
+  .from('reddit_account_tokens')
+  .insert({
+    reddit_account_id: accountId,
+    access_token: encryptedAccessToken,
+    refresh_token: encryptedRefreshToken,
+    expires_at: new Date(Date.now() + expires_in * 1000)
+  });
+```
+
+### Retrieving Reddit Tokens (Decryption)
+
+```javascript
+// api/_lib/redditClient.js (conceptual)
+import { decryptString } from './crypto.js';
+
+// Fetch encrypted token from database
+const { data } = await supabaseAdmin
+  .from('reddit_account_tokens')
+  .select('access_token, refresh_token')
+  .eq('reddit_account_id', accountId)
+  .single();
+
+// Decrypt before use
+const accessToken = decryptString(data.access_token);
+const refreshToken = decryptString(data.refresh_token);
+
+// Use decrypted token for Reddit API call
+const response = await fetch('https://oauth.reddit.com/api/v1/me', {
+  headers: { Authorization: `Bearer ${accessToken}` }
+});
+```
+
+## Database Row-Level Security
+
+Encryption is only one layer. RLS ensures users can only query their own tokens:
+
+```sql
+-- Users can only access tokens for their own Reddit accounts
+CREATE POLICY reddit_account_tokens_select_own
+ON public.reddit_account_tokens
+FOR SELECT
+TO authenticated
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.reddit_accounts ra
+    WHERE ra.id = reddit_account_tokens.reddit_account_id
+      AND ra.user_id = (SELECT auth.uid())
+  )
+);
+```
+
+**Defense in depth:**
+- **RLS**: Prevents unauthorized database reads
+- **Encryption**: Protects data if RLS is bypassed (e.g., database dump)
+
+<Info>
+  Even administrators with database access cannot read encrypted tokens without the `TOKEN_ENCRYPTION_KEY` environment variable.
+</Info>
+
+## Key Rotation
+
+If `TOKEN_ENCRYPTION_KEY` is compromised, rotate immediately:
+
+### 1. Generate New Key
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+### 2. Re-encrypt All Tokens
+
+```javascript
+// Migration script (run with service_role key)
+const { data: tokens } = await supabaseAdmin
+  .from('reddit_account_tokens')
+  .select('id, access_token, refresh_token');
+
+for (const token of tokens) {
+  const accessToken = decryptStringOld(token.access_token);
+  const refreshToken = decryptStringOld(token.refresh_token);
+  
+  const newAccessToken = encryptStringNew(accessToken);
+  const newRefreshToken = encryptStringNew(refreshToken);
+  
+  await supabaseAdmin
+    .from('reddit_account_tokens')
+    .update({
+      access_token: newAccessToken,
+      refresh_token: newRefreshToken
+    })
+    .eq('id', token.id);
+}
+```
+
+### 3. Update Environment Variable
+
+```bash
+# Update production environment
+vercel env rm TOKEN_ENCRYPTION_KEY production
+vercel env add TOKEN_ENCRYPTION_KEY production
+# Paste new key when prompted
+```
+
+### 4. Redeploy Application
+
+```bash
+vercel --prod
+```
+
+<Warning>
+  **Zero-downtime rotation**: The decryption function supports legacy format (`v1:iv:tag:ciphertext`). Deploy the new code before rotating keys to avoid breaking existing tokens during migration.
+</Warning>
+
+## Data at Rest vs. In Transit
+
+### At Rest (Database)
+- **Reddit tokens**: AES-256-GCM encrypted
+- **Supabase passwords**: Bcrypt hashed (managed by Supabase Auth)
+- **Database disk encryption**: Enabled at infrastructure level (Supabase)
+
+### In Transit
+- **All connections**: TLS 1.3 (HTTPS)
+- **Supabase API**: TLS with certificate pinning
+- **Reddit API**: TLS required for OAuth endpoints
+
+## Security Best Practices
+
+### Key Management
+
+- **Separate keys per environment**: Different keys for dev/staging/prod
+- **Store in environment variables**: Never hardcode in source
+- **Rotate annually**: Proactive rotation even without compromise
+- **Audit access**: Monitor who can read environment variables
+
+### Encryption Hygiene
+
+- **Never log decrypted tokens**: Use `[REDACTED]` in logs
+- **Minimize decryption**: Decrypt only when needed, discard immediately
+- **Use service role carefully**: Only backend services should decrypt
+- **Validate format**: Always check encryption format before decryption
+
+### Monitoring
+
+- **Track decryption errors**: May indicate tampering or key mismatch
+- **Alert on key misconfiguration**: Missing or invalid keys should page on-call
+- **Audit token access**: Log when tokens are decrypted (without logging values)
+
+## Common Issues
+
+### "TOKEN_ENCRYPTION_KEY is not configured"
+
+**Cause**: Environment variable not set or not loaded.
+
+**Fix**:
+```bash
+# Verify key exists
+echo $TOKEN_ENCRYPTION_KEY
+
+# Add to .env (local development)
+TOKEN_ENCRYPTION_KEY=your-base64-key
+
+# Add to Vercel (production)
+vercel env add TOKEN_ENCRYPTION_KEY production
+```
+
+### "TOKEN_ENCRYPTION_KEY must be base64-encoded 32 bytes"
+
+**Cause**: Key is wrong length or not base64.
+
+**Fix**: Generate a proper key:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+### Decryption throws "Unsupported authenticated state"
+
+**Cause**: Ciphertext was encrypted with a different key or corrupted.
+
+**Fix**: Verify correct key is loaded. If key was rotated, use old key to decrypt, then re-encrypt with new key.
+
+## Related Documentation
+
+- [Authentication](/security/authentication) - User authentication and session management
+- [GDPR Compliance](/security/gdpr-compliance) - Data deletion and export
+- [API Reference](/api-reference/reddit-oauth) - Reddit OAuth flow

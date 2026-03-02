@@ -1,0 +1,220 @@
+---
+title: "Welcome to SubPirate Pro"
+description: "Analyze subreddit marketing potential with AI-powered insights and run automated Reddit campaigns at scale"
+---
+
+# Welcome to SubPirate Pro
+
+SubPirate Pro is a powerful Reddit marketing analysis platform that helps you discover high-value subreddits, understand their marketing potential, and run automated posting campaigns. Connect your Reddit accounts, analyze communities with AI, organize your targets into projects, and execute campaigns with precision.
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart guide"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get up and running in minutes with your first subreddit analysis
+  </Card>
+  <Card
+    title="Environment setup"
+    icon="gear"
+    href="/environment-setup"
+  >
+    Configure your environment variables and API credentials
+  </Card>
+  <Card
+    title="Reddit OAuth setup"
+    icon="link"
+    href="#reddit-oauth-integration"
+  >
+    Connect Reddit accounts with secure OAuth 2.0 authentication
+  </Card>
+  <Card
+    title="Supabase configuration"
+    icon="database"
+    href="#supabase-integration"
+  >
+    Set up authentication and database with Supabase
+  </Card>
+</CardGroup>
+
+## Key features
+
+### AI-powered subreddit analysis
+
+Analyze subreddit marketing potential using Google's Gemini 3 Flash model via OpenRouter. Get detailed insights on community size, engagement patterns, content preferences, and optimal posting strategies.
+
+<Info>
+  Analysis results are cached in IndexedDB for instant retrieval and processed via Web Workers for optimal performance.
+</Info>
+
+### Multi-account Reddit management
+
+Connect multiple Reddit accounts securely with OAuth 2.0. All refresh tokens are encrypted at rest using AES-256-GCM encryption, ensuring your credentials stay protected.
+
+### Project organization
+
+Organize subreddits into projects with role-based access control. Invite team members with owner, admin, editor, or viewer permissions to collaborate on your marketing strategy.
+
+### Automated campaign execution
+
+Create and schedule posting campaigns with content versioning. The campaign runner automatically pairs your connected Reddit accounts with target subreddits and executes posts according to your schedule.
+
+<Warning>
+  Campaign execution requires the `CAMPAIGN_SCHEDULER_ENABLED=true` environment variable and proper configuration of the cron job endpoint.
+</Warning>
+
+## Tech stack
+
+SubPirate Pro is built with modern web technologies for performance and scalability:
+
+- **Frontend**: React 18 + TypeScript + Vite
+- **Routing**: React Router v6
+- **API**: Express (local dev) or Vercel Serverless Functions (production)
+- **Database & Auth**: Supabase with row-level security (RLS)
+- **AI Analysis**: OpenRouter API with Google Gemini 3 Flash
+- **Styling**: Tailwind CSS with dark theme
+- **State Management**: React Context + TanStack Query
+
+## Architecture overview
+
+### Dual-server setup
+
+SubPirate Pro uses a dual-server architecture optimized for both development and production:
+
+- **Frontend dev server** runs on `:5173` (Vite) and proxies API requests to the backend
+- **API server** runs on `:8787` (Express) for local development
+- **Production deployment** uses Vercel serverless functions in the `api/` directory
+
+<CodeGroup>
+```bash Local development
+npm run dev:all
+# Frontend: http://localhost:5173
+# API: http://localhost:8787
+```
+
+```bash Production
+vercel deploy --prod
+# Serverless functions handle all /api/* routes
+```
+</CodeGroup>
+
+### Reddit OAuth integration
+
+SubPirate Pro implements Reddit's web app OAuth flow:
+
+1. Browser initiates OAuth with `VITE_REDDIT_APP_ID`
+2. Reddit redirects back with authorization code
+3. Server exchanges code for access/refresh tokens via `POST /api/reddit/oauth/exchange`
+4. Refresh tokens are encrypted with `TOKEN_ENCRYPTION_KEY` and stored in the database
+
+<Note>
+  You must register a Reddit app at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) with app type "web app" and configure redirect URIs for both development and production.
+</Note>
+
+### Supabase integration
+
+Authentication and data persistence powered by Supabase:
+
+- **Auth**: PKCE flow with email/password and Google OAuth support
+- **Database**: PostgreSQL with comprehensive row-level security policies
+- **Migrations**: Schema defined in `supabase/migrations/` for version control
+- **Profile auto-creation**: Database trigger automatically creates user profiles on signup
+
+### Analysis workflow
+
+The subreddit analysis pipeline is optimized for performance:
+
+1. `AnalysisContext` manages state and user interactions
+2. `analysisWorkerManager` coordinates background processing
+3. Web Workers (`analysisWorker.ts` / `analysisSharedWorker.ts`) handle heavy lifting
+4. API endpoint `POST /api/openrouter/analyze-subreddit` calls the LLM
+5. Results cached in IndexedDB (`analysisIdb.ts`) for instant retrieval
+
+## Getting started
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    npm install
+    ```
+  </Step>
+
+  <Step title="Configure environment">
+    Copy `.env.example` to `.env` and fill in your API credentials.
+    
+    See [Environment setup](/environment-setup) for detailed configuration.
+  </Step>
+
+  <Step title="Start development servers">
+    ```bash
+    npm run dev:all
+    ```
+    
+    Frontend will be available at `http://localhost:5173`
+  </Step>
+
+  <Step title="Optional: Set up local Supabase">
+    ```bash
+    supabase start
+    ```
+    
+    Requires Docker. View auth emails at `http://127.0.0.1:54324`
+  </Step>
+</Steps>
+
+<Card
+  title="Ready to dive in?"
+  icon="play"
+  href="/quickstart"
+>
+  Follow the quickstart guide to analyze your first subreddit
+</Card>
+
+## Development commands
+
+<CodeGroup>
+```bash All servers
+npm run dev:all
+# Start both frontend (Vite :5173) + API (Express :8787)
+# Recommended for local dev
+```
+
+```bash Frontend only
+npm run dev
+# Vite dev server only
+```
+
+```bash API only
+npm run dev:api
+# Express API server only
+```
+
+```bash Type checking
+npm run typecheck
+# Type-check without build
+```
+
+```bash Production build
+npm run build
+# Type-check + Vite production build
+```
+
+```bash Linting
+npm run lint
+# Run ESLint
+```
+
+```bash Secret scanning
+npm run secret-scan
+# Scan for accidentally committed secrets
+```
+</CodeGroup>
+
+## Need help?
+
+Explore the documentation to learn more:
+
+- [Quickstart guide](/quickstart) - Get your first analysis running
+- [Environment setup](/environment-setup) - Configure all required variables
+- [API reference](/api-reference) - Comprehensive endpoint documentation

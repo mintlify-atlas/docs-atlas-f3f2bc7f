@@ -1,0 +1,411 @@
+---
+title: 'Campaigns Overview'
+description: 'Create and manage Reddit posting campaigns'
+---
+
+## Campaign Management
+
+Campaigns allow you to automate Reddit posts across multiple accounts and subreddits. Each campaign has:
+
+- **Content versions** with post title, body, and media
+- **Reddit account selection** for posting
+- **Subreddit targets** to post in
+- **Scheduling configuration** with daily post targets and timezone
+- **Team collaboration** with role-based permissions
+
+## Authentication
+
+All campaign endpoints require authentication via Bearer token:
+
+```bash
+Authorization: Bearer YOUR_SUPABASE_JWT
+```
+
+## Role-Based Access Control
+
+Campaigns support four permission levels:
+
+| Role | Permissions |
+|------|-------------|
+| **Owner** | Full access (campaign creator, assigned via `user_id`) |
+| **Admin** | Manage members, edit campaign, run campaigns, view all data |
+| **Editor** | Edit campaign settings, run campaigns, view data |
+| **Viewer** | Read-only access to campaign data |
+
+Permissions are stored in the `campaign_members` table. The campaign owner (via `campaigns.user_id`) automatically has admin rights.
+
+---
+
+## GET /api/campaigns
+
+<Note>
+  This endpoint uses Supabase client-side queries. Access campaigns via:
+  ```typescript
+  const { data, error } = await supabase
+    .from('campaigns')
+    .select('*')
+    .order('created_at', { ascending: false });
+  ```
+</Note>
+
+List all campaigns the authenticated user has access to. Row-level security (RLS) policies automatically filter campaigns based on:
+
+- Campaigns owned by the user (`user_id` matches)
+- Campaigns where the user is a member (`campaign_members` table)
+
+### Response Schema
+
+<ResponseField name="campaigns" type="array">
+  Array of campaign objects
+  
+  <Expandable title="Campaign Object">
+    <ResponseField name="id" type="string" required>
+      UUID of the campaign
+    </ResponseField>
+    
+    <ResponseField name="user_id" type="string" required>
+      UUID of the campaign owner
+    </ResponseField>
+    
+    <ResponseField name="name" type="string" required>
+      Campaign name
+    </ResponseField>
+    
+    <ResponseField name="description" type="string">
+      Optional campaign description
+    </ResponseField>
+    
+    <ResponseField name="objective" type="string">
+      Campaign objective or goal
+    </ResponseField>
+    
+    <ResponseField name="status" type="string" required>
+      Campaign status: `draft`, `active`, `paused`, or `completed`
+    </ResponseField>
+    
+    <ResponseField name="start_date" type="string">
+      ISO 8601 date (YYYY-MM-DD) when campaign should start
+    </ResponseField>
+    
+    <ResponseField name="end_date" type="string">
+      ISO 8601 date (YYYY-MM-DD) when campaign should end
+    </ResponseField>
+    
+    <ResponseField name="daily_post_target" type="number" required>
+      Number of posts to attempt per day (default: 1)
+    </ResponseField>
+    
+    <ResponseField name="timezone" type="string" required>
+      IANA timezone identifier (e.g., `America/New_York`, `UTC`)
+    </ResponseField>
+    
+    <ResponseField name="jitter_seconds" type="number">
+      Random time offset (±seconds) for scheduled runs (default: 0)
+    </ResponseField>
+    
+    <ResponseField name="carry_over_enabled" type="boolean">
+      If true, shortfall from previous days carries over to next run
+    </ResponseField>
+    
+    <ResponseField name="pause_requested" type="boolean">
+      Internal flag indicating pause was requested
+    </ResponseField>
+    
+    <ResponseField name="config_version" type="number">
+      Incremented on configuration changes for cache invalidation
+    </ResponseField>
+    
+    <ResponseField name="created_at" type="string">
+      ISO 8601 timestamp of creation
+    </ResponseField>
+    
+    <ResponseField name="updated_at" type="string">
+      ISO 8601 timestamp of last update
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Request
+
+```typescript
+import { supabase } from './supabase';
+
+const { data: campaigns, error } = await supabase
+  .from('campaigns')
+  .select('*')
+  .order('created_at', { ascending: false });
+
+if (error) {
+  console.error('Failed to load campaigns:', error.message);
+} else {
+  console.log(`Loaded ${campaigns.length} campaigns`);
+}
+```
+
+---
+
+## POST /api/campaigns
+
+<Note>
+  This endpoint uses Supabase client-side mutations:
+  ```typescript
+  const { data, error } = await supabase
+    .from('campaigns')
+    .insert({ name, description, ... })
+    .select()
+    .single();
+  ```
+</Note>
+
+Create a new campaign. The authenticated user becomes the campaign owner.
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  Campaign name (max 255 characters)
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional campaign description
+</ParamField>
+
+<ParamField body="objective" type="string">
+  Campaign objective or goal
+</ParamField>
+
+<ParamField body="status" type="string" default="draft">
+  Initial status: `draft`, `active`, `paused`, or `completed`
+</ParamField>
+
+<ParamField body="start_date" type="string">
+  ISO 8601 date (YYYY-MM-DD) when campaign should start
+</ParamField>
+
+<ParamField body="end_date" type="string">
+  ISO 8601 date (YYYY-MM-DD) when campaign should end
+</ParamField>
+
+<ParamField body="daily_post_target" type="number" default="1">
+  Number of posts to attempt per day (must be >= 1)
+</ParamField>
+
+<ParamField body="timezone" type="string" default="UTC">
+  IANA timezone identifier (e.g., `America/New_York`)
+</ParamField>
+
+<ParamField body="jitter_seconds" type="number" default="0">
+  Random time offset (±seconds) for scheduled runs
+</ParamField>
+
+<ParamField body="carry_over_enabled" type="boolean" default="false">
+  If true, shortfall from previous days carries over
+</ParamField>
+
+### Response
+
+Returns the created campaign object (see GET response schema above).
+
+### Example Request
+
+```typescript
+const { data: campaign, error } = await supabase
+  .from('campaigns')
+  .insert({
+    name: 'Product Launch Campaign',
+    description: 'Promote our new SaaS product across tech subreddits',
+    objective: 'Drive 1000 signups in Q1',
+    status: 'draft',
+    start_date: '2026-03-15',
+    end_date: '2026-06-30',
+    daily_post_target: 5,
+    timezone: 'America/Los_Angeles',
+    carry_over_enabled: true,
+  })
+  .select()
+  .single();
+
+if (error) {
+  console.error('Failed to create campaign:', error.message);
+} else {
+  console.log('Campaign created:', campaign.id);
+}
+```
+
+```bash
+curl -X POST https://your-api.example.com/api/campaigns \
+  -H "Authorization: Bearer YOUR_SUPABASE_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Product Launch Campaign",
+    "description": "Promote our new SaaS product",
+    "status": "draft",
+    "daily_post_target": 5,
+    "timezone": "America/Los_Angeles"
+  }'
+```
+
+---
+
+## GET /api/campaigns/:id
+
+<Note>
+  Access via Supabase:
+  ```typescript
+  const { data, error } = await supabase
+    .from('campaigns')
+    .select('*')
+    .eq('id', campaignId)
+    .single();
+  ```
+</Note>
+
+Get a specific campaign by ID. Requires at least **Viewer** role.
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Campaign UUID
+</ParamField>
+
+### Response
+
+Returns a single campaign object (see GET /api/campaigns schema).
+
+### Errors
+
+- **404**: Campaign not found or user lacks access
+- **403**: User does not have permission to view this campaign
+
+---
+
+## PATCH /api/campaigns/:id
+
+<Note>
+  Update via Supabase:
+  ```typescript
+  const { data, error } = await supabase
+    .from('campaigns')
+    .update({ name, status, ... })
+    .eq('id', campaignId)
+    .select()
+    .single();
+  ```
+</Note>
+
+Update a campaign. Requires at least **Editor** role.
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Campaign UUID
+</ParamField>
+
+### Request Body
+
+All fields are optional. Only provided fields will be updated.
+
+<ParamField body="name" type="string">
+  Campaign name
+</ParamField>
+
+<ParamField body="description" type="string">
+  Campaign description
+</ParamField>
+
+<ParamField body="objective" type="string">
+  Campaign objective
+</ParamField>
+
+<ParamField body="status" type="string">
+  Status: `draft`, `active`, `paused`, or `completed`
+</ParamField>
+
+<ParamField body="start_date" type="string">
+  Start date (YYYY-MM-DD)
+</ParamField>
+
+<ParamField body="end_date" type="string">
+  End date (YYYY-MM-DD)
+</ParamField>
+
+<ParamField body="daily_post_target" type="number">
+  Daily post target (>= 1)
+</ParamField>
+
+<ParamField body="timezone" type="string">
+  IANA timezone identifier
+</ParamField>
+
+<ParamField body="jitter_seconds" type="number">
+  Random time offset for scheduling
+</ParamField>
+
+<ParamField body="carry_over_enabled" type="boolean">
+  Enable shortfall carry-over
+</ParamField>
+
+### Response
+
+Returns the updated campaign object.
+
+### Example Request
+
+```typescript
+const { data: campaign, error } = await supabase
+  .from('campaigns')
+  .update({
+    status: 'active',
+    daily_post_target: 10,
+  })
+  .eq('id', campaignId)
+  .select()
+  .single();
+```
+
+---
+
+## DELETE /api/campaigns/:id
+
+<Note>
+  Delete via Supabase:
+  ```typescript
+  const { error } = await supabase
+    .from('campaigns')
+    .delete()
+    .eq('id', campaignId);
+  ```
+</Note>
+
+Delete a campaign. Requires **Owner** or **Admin** role. This will cascade-delete:
+
+- All campaign runs and attempts
+- Campaign content versions
+- Campaign members and invites
+- Reddit account and subreddit associations
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Campaign UUID
+</ParamField>
+
+### Response
+
+- **204**: Campaign deleted successfully
+- **403**: User does not have permission to delete this campaign
+- **404**: Campaign not found
+
+### Example Request
+
+```typescript
+const { error } = await supabase
+  .from('campaigns')
+  .delete()
+  .eq('id', campaignId);
+
+if (error) {
+  console.error('Failed to delete campaign:', error.message);
+} else {
+  console.log('Campaign deleted');
+}
+```

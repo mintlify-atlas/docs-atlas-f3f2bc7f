@@ -1,0 +1,270 @@
+---
+title: 'Local Development Setup'
+description: 'Set up SubPirate Pro for local development with Express and Supabase'
+---
+
+## Overview
+
+SubPirate Pro uses a dual-server architecture for local development:
+- **Frontend**: Vite dev server on `http://localhost:5173`
+- **API**: Express server on `http://localhost:8787`
+- **Database**: Supabase (local via Docker or hosted)
+
+The Vite dev server automatically proxies API requests to the Express server.
+
+## Prerequisites
+
+- Node.js 18+ and npm
+- Docker (required for local Supabase)
+- Supabase CLI v2.33.9 (validated version)
+
+<Warning>
+  Avoid using `npx supabase@latest` (v2.75.0+) as it currently fails `db reset` due to an upstream Storage schema mismatch. Use v2.33.9 instead.
+</Warning>
+
+## Quick Start
+
+<Steps>
+  <Step title="Install dependencies">
+    Install all Node.js dependencies:
+
+    <CodeGroup>
+    ```bash npm
+    npm install
+    ```
+
+    ```bash yarn
+    yarn install
+    ```
+
+    ```bash pnpm
+    pnpm install
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Configure environment variables">
+    Copy the example environment file and fill in the required values:
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    Key environment variables for local development:
+
+    ```bash .env
+    # Client (public - bundled into browser)
+    VITE_SUPABASE_URL=http://127.0.0.1:54321
+    VITE_SUPABASE_ANON_KEY=<from supabase status>
+    VITE_REDDIT_APP_ID=<your reddit app id>
+
+    # Server (private - never exposed to browser)
+    PORT=8787
+    SUPABASE_URL=http://127.0.0.1:54321
+    SUPABASE_ANON_KEY=<from supabase status>
+    OPENROUTER_API_KEY=<your openrouter key>
+    REDDIT_CLIENT_ID=<your reddit client id>
+    REDDIT_CLIENT_SECRET=<your reddit client secret>
+    REDDIT_USER_AGENT="web:SubPirate:1.0.0 (by /u/yourusername)"
+    TOKEN_ENCRYPTION_KEY=<base64-encoded 32-byte key>
+    APP_ORIGIN=http://localhost:5173
+    CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+    ```
+
+    <Tip>
+      Generate a secure `TOKEN_ENCRYPTION_KEY` with:
+      ```bash
+      node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+      ```
+    </Tip>
+
+    <Warning>
+      **Never** put secrets in `VITE_*` variables. Only use `VITE_*` prefix for public values that are safe to expose in the browser bundle.
+    </Warning>
+  </Step>
+
+  <Step title="Start local Supabase (optional)">
+    If you want to run a local Supabase instance instead of connecting to a hosted project:
+
+    ```bash
+    supabase start
+    ```
+
+    This will start all Supabase services in Docker containers. Once started, copy the `API URL` and `anon key` from the output and update your `.env` file.
+
+    View the Supabase Studio dashboard at `http://127.0.0.1:54323`.
+
+    <Tip>
+      To view local auth emails (confirmations, password resets), visit the Inbucket mail server at `http://127.0.0.1:54324`.
+    </Tip>
+  </Step>
+
+  <Step title="Start the development servers">
+    Run both frontend and API servers concurrently:
+
+    <CodeGroup>
+    ```bash npm
+    npm run dev:all
+    ```
+
+    ```bash yarn
+    yarn dev:all
+    ```
+
+    ```bash pnpm
+    pnpm dev:all
+    ```
+    </CodeGroup>
+
+    This starts:
+    - **Frontend** at `http://localhost:5173`
+    - **API** at `http://localhost:8787`
+
+    You can also run servers individually:
+    - Frontend only: `npm run dev`
+    - API only: `npm run dev:api`
+  </Step>
+</Steps>
+
+## Local Admin Bypass (Development Only)
+
+For rapid local testing without Supabase auth, enable the local admin bypass:
+
+```bash .env
+VITE_LOCAL_ADMIN_BYPASS=1
+VITE_LOCAL_ADMIN_TOKEN=your-secret-token
+LOCAL_ADMIN_BYPASS=1
+LOCAL_ADMIN_TOKEN=your-secret-token
+```
+
+This adds a "Local Admin Login (dev)" button on `/login` that authorizes API calls without authentication.
+
+<Warning>
+  This bypass is **development only**. Never enable it in production.
+</Warning>
+
+## Supabase Local Commands
+
+Common Supabase CLI commands for local development:
+
+<CodeGroup>
+```bash Start local Supabase
+supabase start
+```
+
+```bash Stop local Supabase
+supabase stop
+```
+
+```bash Reset database to migrations
+supabase db reset --local --yes
+```
+
+```bash Lint schema
+supabase db lint
+```
+
+```bash View service status
+supabase status
+```
+
+```bash Generate TypeScript types
+supabase gen types --local --schema public --schema auth --schema storage > src/lib/database.types.ts
+```
+</CodeGroup>
+
+## Development Scripts
+
+Available npm scripts for development:
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev:all` | Start both frontend and API servers (recommended) |
+| `npm run dev` | Start frontend dev server only (Vite) |
+| `npm run dev:api` | Start API server only (Express) |
+| `npm run typecheck` | Type-check TypeScript without emitting files |
+| `npm run build` | Type-check and build for production |
+| `npm run lint` | Run ESLint |
+| `npm run secret-scan` | Scan for accidentally committed secrets |
+| `npm run smoke:local` | End-to-end smoke test (requires local Supabase) |
+
+## Smoke Testing
+
+Run the local smoke test to verify auth confirmations and RLS policies:
+
+<Steps>
+  <Step title="Start local Supabase">
+    ```bash
+    supabase start
+    ```
+  </Step>
+
+  <Step title="Update environment variables">
+    Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from `supabase status` output.
+  </Step>
+
+  <Step title="Run smoke test">
+    ```bash
+    npm run smoke:local
+    ```
+  </Step>
+</Steps>
+
+## Architecture Notes
+
+### Dual-Server Design
+
+SubPirate Pro uses different server configurations for development and production:
+
+- **Local development**: Express server (`server.js`) handles all `/api/*` routes
+- **Production (Vercel)**: Serverless functions in `api/` directory mirror Express routes
+
+The Vite config proxies `/api/*` and `/health` requests to the Express server during development (configured in `vite.config.ts`).
+
+### API Request Flow
+
+1. Frontend makes API call using `secureFetch()` from `src/lib/fetch.ts`
+2. Supabase JWT (or local admin token in dev) is automatically attached
+3. Vite dev server proxies request to Express at `:8787`
+4. Express routes in `server.js` handle the request
+5. Response returned to frontend
+
+## Troubleshooting
+
+### Port conflicts
+
+If ports 5173 or 8787 are already in use, you can change them:
+
+```bash .env
+PORT=8788  # Change API port
+```
+
+For the Vite port, modify `vite.config.ts`.
+
+### Supabase connection issues
+
+Verify Supabase is running and accessible:
+
+```bash
+supabase status
+curl http://127.0.0.1:54321/rest/v1/
+```
+
+### CORS errors
+
+Ensure `CORS_ORIGINS` in `.env` includes your frontend origin:
+
+```bash
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Supabase Setup" icon="database" href="/deployment/supabase">
+    Configure your Supabase project
+  </Card>
+  <Card title="Vercel Deployment" icon="rocket" href="/deployment/vercel">
+    Deploy to production
+  </Card>
+</CardGroup>

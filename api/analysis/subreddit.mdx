@@ -1,0 +1,278 @@
+---
+title: Analyze subreddit
+description: Perform comprehensive subreddit analysis with AI-powered insights
+---
+
+## GET /api/analyze/:subreddit
+
+Analyze a subreddit for marketing potential using AI-powered insights. This endpoint performs a comprehensive analysis including rules, moderator activity, content strategy, and generates actionable recommendations.
+
+### Authentication
+
+Requires active subscription and valid JWT token.
+
+### Path Parameters
+
+<ParamField path="subreddit" type="string" required>
+  The subreddit name (3-21 characters, alphanumeric and underscores only). Do not include "r/" prefix.
+</ParamField>
+
+### Query Parameters
+
+<ParamField query="force" type="boolean" default="false">
+  Admin-only. Force re-analysis even if cached data exists (within 30 days).
+</ParamField>
+
+### Caching Behavior
+
+Analyses are cached for **30 days**. If a valid cached analysis exists, it will be returned immediately without consuming quota. Admins can bypass cache with `?force=true`.
+
+### Quota Management
+
+This endpoint uses the analysis quota system:
+- Cached results don't count against quota
+- Fresh analyses increment the usage counter
+- If quota is exceeded, returns 403 with upgrade prompt
+- Admin users have unlimited quota
+
+### Locking Mechanism
+
+To prevent duplicate analyses, an advisory lock is acquired before fetching:
+1. If lock is available: proceeds with analysis
+2. If lock is held: waits 5 seconds, polls cache, then retries
+3. If lock still unavailable: returns 409 "analysis in progress"
+
+### Response
+
+<ResponseField name="info" type="object">
+  Subreddit metadata
+  <Expandable>
+    <ResponseField name="name" type="string">
+      Subreddit name
+    </ResponseField>
+    <ResponseField name="title" type="string">
+      Display title
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Public description
+    </ResponseField>
+    <ResponseField name="subscribers" type="number">
+      Total subscriber count
+    </ResponseField>
+    <ResponseField name="active_users" type="number">
+      Currently active users
+    </ResponseField>
+    <ResponseField name="created_utc" type="number">
+      Subreddit creation timestamp (Unix)
+    </ResponseField>
+    <ResponseField name="over18" type="boolean">
+      NSFW status
+    </ResponseField>
+    <ResponseField name="icon_img" type="string">
+      Subreddit icon URL
+    </ResponseField>
+    <ResponseField name="rules" type="array">
+      Array of rule objects with title, description, and marketingImpact (low/medium/high)
+    </ResponseField>
+    <ResponseField name="moderators" type="object">
+      Moderator summary (total, veryActive, active, dormant counts, names array)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="posts" type="array">
+  Top 25 posts from the past month (title, score, num_comments, created_utc)
+</ResponseField>
+
+<ResponseField name="analysis" type="object">
+  AI-generated analysis
+  <Expandable>
+    <ResponseField name="marketingFriendliness" type="object">
+      Marketing friendliness score (0-100), reasons array, and recommendations array
+    </ResponseField>
+    <ResponseField name="postingLimits" type="object">
+      Posting frequency (per week), bestTimeToPost array, contentRestrictions array
+    </ResponseField>
+    <ResponseField name="contentStrategy" type="object">
+      Recommended content types (text/link/image), topics array, style string, dos array, donts array
+    </ResponseField>
+    <ResponseField name="titleTemplates" type="object">
+      Title patterns array, examples array, effectiveness score (0-100)
+    </ResponseField>
+    <ResponseField name="strategicAnalysis" type="object">
+      SWOT analysis: strengths, weaknesses, opportunities, risks arrays
+    </ResponseField>
+    <ResponseField name="gamePlan" type="object">
+      Actionable steps: immediate, shortTerm, longTerm arrays
+    </ResponseField>
+    <ResponseField name="moderationAnalysis" type="object">
+      Moderator counts, strictnessLevel (low/medium/high/very_high), enforcementStyle (lenient/neutral/firm/aggressive), notes array, redFlags array
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Request
+
+```bash cURL
+curl -X GET "https://api.example.com/api/analyze/fitness" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+### Example Response
+
+```json
+{
+  "info": {
+    "name": "fitness",
+    "title": "Fitness",
+    "description": "Discussion about fitness, exercise, and nutrition",
+    "subscribers": 850000,
+    "active_users": 5200,
+    "created_utc": 1201747200,
+    "over18": false,
+    "rules": [
+      {
+        "title": "No self-promotion",
+        "description": "No links to your blog, YouTube, etc.",
+        "marketingImpact": "high"
+      }
+    ],
+    "moderators": {
+      "total": 8,
+      "veryActive": 3,
+      "active": 2,
+      "dormant": 3,
+      "names": ["mod1", "mod2"]
+    }
+  },
+  "posts": [
+    {
+      "title": "Finally hit my goal weight!",
+      "score": 1523,
+      "num_comments": 89,
+      "created_utc": 1709251200
+    }
+  ],
+  "analysis": {
+    "marketingFriendliness": {
+      "score": 35,
+      "reasons": [
+        "Strict no self-promotion rule",
+        "High moderator activity",
+        "Community values authentic experiences"
+      ],
+      "recommendations": [
+        "Focus on educational content",
+        "Build credibility before promoting",
+        "Participate genuinely in discussions"
+      ]
+    },
+    "postingLimits": {
+      "frequency": 2,
+      "bestTimeToPost": ["Monday 6-8am EST", "Thursday 5-7pm EST"],
+      "contentRestrictions": ["No direct product links", "No referral codes"]
+    },
+    "contentStrategy": {
+      "recommendedTypes": ["text", "image"],
+      "topics": ["Progress updates", "Form checks", "Nutrition tips"],
+      "style": "Personal and encouraging",
+      "dos": ["Share personal journey", "Ask for advice", "Celebrate wins"],
+      "donts": ["Hard sell products", "Use promotional language", "Post repeatedly"]
+    },
+    "moderationAnalysis": {
+      "totalMods": 8,
+      "activeMods": 2,
+      "veryActiveMods": 3,
+      "dormantMods": 3,
+      "strictnessLevel": "high",
+      "enforcementStyle": "firm",
+      "notes": ["Active mod team reviews all posts"],
+      "redFlags": ["Zero tolerance for self-promotion"]
+    }
+  }
+}
+```
+
+### Error Responses
+
+<ResponseField name="400" type="error">
+  Invalid subreddit name
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  Subscription required or quota exceeded
+  ```json
+  {
+    "error": "quota_exceeded",
+    "feature": "analysis",
+    "used": 10,
+    "limit": 10,
+    "upgrade_required": true,
+    "message": "You've used 10/10 analyses this month."
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="404" type="error">
+  Subreddit not found
+</ResponseField>
+
+<ResponseField name="409" type="error">
+  Analysis already in progress
+  ```json
+  {
+    "error": "analysis_in_progress",
+    "message": "Analysis for this subreddit is already in progress. Please retry in a few seconds."
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="500" type="error">
+  Server error or OpenRouter API key not configured
+</ResponseField>
+
+<ResponseField name="502" type="error">
+  OpenRouter API error or invalid response
+</ResponseField>
+
+## Implementation Details
+
+The analysis workflow (from `api/analyze/[subreddit].js`):
+
+1. **Cache check**: Returns cached data if fresh (< 30 days old)
+2. **Quota check**: Verifies user hasn't exceeded monthly limit
+3. **Lock acquisition**: Prevents duplicate analyses
+4. **Phase 1 - Reddit data fetch** (parallel):
+   - Subreddit about info
+   - Rules
+   - Top posts (all-time for title analysis, monthly for UI)
+   - Moderator list
+5. **Phase 2 - Moderator enrichment**: Fetches activity data for up to 8 mods
+6. **LLM analysis**: Sends enriched data to OpenRouter (google/gemini-3-flash-preview)
+7. **Database cache**: Stores result in `subreddits` table
+8. **Quota increment**: Increments usage counter (except for admins)
+9. **Lock release**: Frees advisory lock
+
+### Moderator Activity Tiers
+
+- **very_active**: Last activity within 7 days
+- **active**: Last activity within 30 days
+- **dormant**: No activity in 30+ days
+
+### Content Type Normalization
+
+The endpoint normalizes AI-suggested content types to one of three core types:
+- **text**: Self posts, discussions, stories
+- **link**: External URLs, videos
+- **image**: Photos, screenshots, memes
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="OpenRouter Integration" icon="brain" href="/integrations/openrouter-ai">
+    Learn about the AI model configuration
+  </Card>
+  <Card title="Subreddit Analysis Feature" icon="chart-bar" href="/features/subreddit-analysis">
+    User guide for the analysis dashboard
+  </Card>
+</CardGroup>

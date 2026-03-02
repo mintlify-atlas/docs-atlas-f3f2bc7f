@@ -1,0 +1,522 @@
+---
+title: Stripe Billing Integration
+description: Set up Stripe for subscription management and billing
+---
+
+## Overview
+
+SubPirate uses [Stripe](https://stripe.com) for subscription billing. This integration handles:
+
+- Subscription checkout and payments
+- Plan upgrades and downgrades
+- Webhook events for subscription lifecycle
+- Customer portal for self-service billing management
+
+## Prerequisites
+
+Before starting, you'll need:
+
+- A Stripe account (sign up at [dashboard.stripe.com](https://dashboard.stripe.com))
+- Stripe CLI for local webhook testing (optional but recommended)
+- Supabase project with subscription tables migrated
+
+## Subscription Tiers
+
+SubPirate offers four subscription tiers:
+
+| Tier | Monthly Price | Annual Price | Features |
+|------|---------------|--------------|----------|
+| **Starter** | $19.99/mo | TBD | Basic features, limited quotas |
+| **Creator** | $37.99/mo | TBD | Enhanced features, higher quotas |
+| **Pro** | $67.99/mo | TBD | Full features, professional quotas |
+| **Agency** | Contact Us | Contact Us | Enterprise features (archived in Stripe) |
+
+## Stripe Setup
+
+<Steps>
+  <Step title="Create Stripe Account">
+    If you don't have one, create an account at [https://dashboard.stripe.com](https://dashboard.stripe.com).
+    
+    Start in **Test Mode** for development.
+  </Step>
+  
+  <Step title="Create Products and Prices">
+    Create three products in Stripe Dashboard → **Products**:
+    
+    ### Starter Product
+    - **Name:** SubPirate Starter
+    - **Metadata:** `tier` = `starter`
+    - **Prices:**
+      - Monthly: $19.99 recurring
+      - Annual: TBD recurring
+    
+    ### Creator Product
+    - **Name:** SubPirate Creator
+    - **Metadata:** `tier` = `creator`
+    - **Prices:**
+      - Monthly: $37.99 recurring
+      - Annual: TBD recurring
+    
+    ### Pro Product
+    - **Name:** SubPirate Pro
+    - **Metadata:** `tier` = `pro`
+    - **Prices:**
+      - Monthly: $67.99 recurring
+      - Annual: TBD recurring
+    
+    <Warning>
+      Add `tier` metadata to **products** and `plan_tier` metadata to **prices**. The webhook processor uses this to map Stripe subscriptions to SubPirate plans.
+    </Warning>
+  </Step>
+  
+  <Step title="Copy Price IDs">
+    After creating prices, copy each Price ID (format: `price_xxxxxxxxxxxxx`) from the Stripe Dashboard.
+    
+    You'll need six Price IDs total (one monthly + one annual for each tier).
+  </Step>
+  
+  <Step title="Get API Keys">
+    Navigate to **Developers** → **API keys** and copy:
+    - **Publishable key** (starts with `pk_test_` or `pk_live_`)
+    - **Secret key** (starts with `sk_test_` or `sk_live_`)
+    
+    <Warning>
+      Never expose your **Secret key** to the browser or commit it to version control.
+    </Warning>
+  </Step>
+</Steps>
+
+## Environment Variables
+
+Add these to your `.env` file:
+
+```env .env
+# Stripe Secret Key (server-only)
+STRIPE_SECRET_KEY=sk_test_...
+
+# Stripe Webhook Secret (from step "Configure Webhooks" below)
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# Price IDs (server-only)
+STRIPE_PRICE_STARTER_MONTHLY=price_...
+STRIPE_PRICE_STARTER_ANNUAL=price_...
+STRIPE_PRICE_CREATOR_MONTHLY=price_...
+STRIPE_PRICE_CREATOR_ANNUAL=price_...
+STRIPE_PRICE_PRO_MONTHLY=price_...
+STRIPE_PRICE_PRO_ANNUAL=price_...
+```
+
+<Warning>
+  All Stripe variables are **server-only**. Never prefix them with `VITE_`.
+</Warning>
+
+## Configure Webhooks
+
+Stripe uses webhooks to notify your app about subscription events (payments, cancellations, etc.).
+
+### Local Development
+
+<Steps>
+  <Step title="Install Stripe CLI">
+    ```bash
+    brew install stripe/stripe-cli/stripe
+    stripe login
+    ```
+  </Step>
+  
+  <Step title="Forward Webhooks to Localhost">
+    ```bash
+    stripe listen --forward-to localhost:8787/api/stripe/webhook
+    ```
+    
+    The CLI will print a webhook signing secret (`whsec_...`). Copy it to your `.env`:
+    
+    ```env
+    STRIPE_WEBHOOK_SECRET=whsec_...
+    ```
+  </Step>
+  
+  <Step title="Keep CLI Running">
+    Leave the `stripe listen` command running while testing. It will log all webhook events.
+  </Step>
+</Steps>
+
+### Production (Vercel)
+
+<Steps>
+  <Step title="Create Webhook Endpoint">
+    In Stripe Dashboard → **Developers** → **Webhooks**, click **Add endpoint**.
+    
+    **Endpoint URL:**
+    ```
+    https://your-domain.com/api/stripe/webhook
+    ```
+  </Step>
+  
+  <Step title="Select Events">
+    Add these events:
+    - `checkout.session.completed`
+    - `invoice.paid`
+    - `invoice.payment_failed`
+    - `customer.subscription.updated`
+    - `customer.subscription.deleted`
+  </Step>
+  
+  <Step title="Copy Signing Secret">
+    After creating the endpoint, click to reveal the **Signing secret**.
+    
+    Add it to your Vercel environment variables as `STRIPE_WEBHOOK_SECRET`.
+  </Step>
+</Steps>
+
+## Webhook Processing
+
+The webhook processor is implemented in `api/_lib/stripeWebhookProcessor.js`.
+
+### Idempotency
+
+All webhook events are logged in the `stripe_webhook_events` table to prevent duplicate processing:
+
+```javascript
+const claim = await claimEventLedger(supabase, event);
+if (!claim.shouldProcess) {
+  return { statusCode: 200, body: { received: true, duplicate: true } };
+}
+```
+
+If an event fails processing, it's marked as `failed` and can be retried.
+
+### Event Handlers
+
+#### checkout.session.completed
+
+Processed when a user completes Stripe Checkout:
+
+```javascript
+async function processCheckoutCompleted(event, supabase, stripe) {
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  
+  // Resolve user identity from Stripe customer or metadata
+  const identity = await resolveWebhookIdentity({ event, supabase });
+  
+  // Upsert subscription record
+  await supabase.from('subscriptions').upsert({
+    user_id: identity.userId,
+    stripe_customer_id: session.customer,
+    stripe_subscription_id: subscription.id,
+    plan_id: planId,
+    tier: tier,
+    status: 'active'
+  });
+}
+```
+
+#### invoice.paid
+
+Processed on successful recurring payments:
+
+```javascript
+async function processInvoicePaid(event, supabase, stripe) {
+  // Update subscription status and period dates
+  await supabase.from('subscriptions').upsert({
+    status: 'active',
+    current_period_start: new Date(subscription.current_period_start * 1000),
+    current_period_end: new Date(subscription.current_period_end * 1000),
+    grace_period_end: null
+  });
+  
+  // Create new usage period for quota tracking
+  await supabase.from('subscription_usage').upsert({
+    user_id: userId,
+    period_start: periodStart,
+    period_end: periodEnd,
+    analyses_count: 0
+  });
+}
+```
+
+#### invoice.payment_failed
+
+Processed when a payment fails:
+
+```javascript
+async function processInvoicePaymentFailed(event, supabase, stripe) {
+  const gracePeriodEnd = new Date();
+  gracePeriodEnd.setDate(gracePeriodEnd.getDate() + 7); // 7-day grace period
+  
+  await supabase.from('subscriptions').upsert({
+    status: 'past_due',
+    grace_period_end: gracePeriodEnd.toISOString()
+  });
+}
+```
+
+#### customer.subscription.updated
+
+Processed when a subscription is modified (plan changes, cancellations):
+
+```javascript
+async function processSubscriptionUpdated(event, supabase) {
+  // Detect downgrades and flag for admin review
+  const isDowngrade = tierRank[newTier] < tierRank[currentTier];
+  
+  const updateData = {
+    tier: newTier,
+    plan_id: planId,
+    billing_interval: interval,
+    cancel_at_period_end: Boolean(subscription.cancel_at_period_end)
+  };
+  
+  if (isDowngrade) {
+    updateData.downgrade_action_required = {
+      previous_tier: currentTier,
+      new_tier: newTier,
+      flagged_at: new Date().toISOString()
+    };
+  }
+}
+```
+
+#### customer.subscription.deleted
+
+Processed when a subscription is canceled:
+
+```javascript
+async function processSubscriptionDeleted(event, supabase) {
+  await supabase.from('subscriptions').upsert({
+    status: 'canceled',
+    canceled_at: new Date(subscription.canceled_at * 1000),
+    stripe_subscription_id: '', // Clear subscription ID
+    grace_period_end: null
+  });
+}
+```
+
+### Identity Resolution
+
+The webhook processor resolves user identity through multiple fallback strategies:
+
+1. **By Stripe Subscription ID:** Query `subscriptions` table
+2. **By Stripe Customer ID:** Query `subscriptions` table
+3. **By Metadata:** Check `subscription.metadata.user_id`
+
+If identity cannot be resolved, the event is logged to `stripe_webhook_unmatched` for manual review.
+
+## Customer Portal
+
+Stripe Customer Portal allows users to self-manage their subscriptions.
+
+<Steps>
+  <Step title="Enable Customer Portal">
+    Navigate to **Settings** → **Billing** → **Customer Portal**.
+  </Step>
+  
+  <Step title="Configure Features">
+    Enable:
+    - Cancel subscription
+    - Switch plans (upgrade/downgrade with proration)
+    - Update payment method
+    - View invoices
+    
+    <Warning>
+      Disallow immediate cancellations. Instead, set subscriptions to cancel at period end.
+    </Warning>
+  </Step>
+  
+  <Step title="Save Configuration">
+    Click **Save** to activate the portal.
+  </Step>
+</Steps>
+
+Users access the portal via the "Manage Subscription" button in SubPirate's settings page.
+
+## Dynamic Payment Methods
+
+Stripe automatically selects optimal payment methods based on customer location.
+
+<Steps>
+  <Step title="Enable Dynamic Payment Methods">
+    In **Settings** → **Payment methods**, enable dynamic payment methods.
+  </Step>
+  
+  <Step title="Remove Hardcoded Types">
+    Ensure your checkout code does **not** hardcode `payment_method_types`. Let Stripe decide:
+    
+    ```javascript
+    // Good: Let Stripe choose
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      line_items: [{ price: priceId, quantity: 1 }]
+    });
+    
+    // Bad: Hardcoded payment methods
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      payment_method_types: ['card'], // Don't do this
+      line_items: [{ price: priceId, quantity: 1 }]
+    });
+    ```
+  </Step>
+</Steps>
+
+## Email Notifications
+
+Configure Stripe to send automatic emails:
+
+<Steps>
+  <Step title="Navigate to Email Settings">
+    Go to **Settings** → **Emails**.
+  </Step>
+  
+  <Step title="Enable Notifications">
+    Turn on:
+    - Successful payment receipts
+    - Failed payment notifications
+    - Upcoming trial ending (3 days before)
+    - Subscription canceled confirmation
+  </Step>
+</Steps>
+
+## Testing
+
+### Test Cards
+
+Use these cards in Test Mode:
+
+| Card Number | Scenario |
+|-------------|----------|
+| `4242 4242 4242 4242` | Successful payment |
+| `4000 0000 0000 0341` | Immediate charge failure |
+| `4000 0025 0000 3155` | Requires 3D Secure authentication |
+| `4000 0000 0000 9995` | Insufficient funds |
+
+Use any future expiry date and any 3-digit CVC.
+
+### Test Checklist
+
+- [ ] Complete checkout with test card `4242 4242 4242 4242`
+- [ ] Verify `checkout.session.completed` webhook fires
+- [ ] Confirm subscription appears in database with status `active`
+- [ ] Check `/settings` page shows correct plan
+- [ ] Click "Manage Subscription" and verify portal opens
+- [ ] Test plan upgrade (Starter → Creator)
+- [ ] Test plan downgrade and verify `downgrade_action_required` is set
+- [ ] Cancel subscription and verify status updates to `canceled`
+- [ ] Test failed payment with card `4000 0000 0000 0341`
+- [ ] Verify grace period is set and user can still access features
+
+## Database Schema
+
+### subscriptions Table
+
+```sql
+CREATE TABLE subscriptions (
+  user_id UUID PRIMARY KEY REFERENCES profiles(user_id),
+  stripe_customer_id TEXT NOT NULL,
+  stripe_subscription_id TEXT,
+  plan_id UUID REFERENCES plan_definitions(id),
+  tier TEXT NOT NULL,
+  status TEXT NOT NULL,
+  billing_interval TEXT,
+  current_period_start TIMESTAMPTZ,
+  current_period_end TIMESTAMPTZ,
+  cancel_at_period_end BOOLEAN DEFAULT false,
+  canceled_at TIMESTAMPTZ,
+  grace_period_end TIMESTAMPTZ,
+  downgrade_action_required JSONB,
+  stripe_last_event_created_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### stripe_webhook_events Table
+
+Logs all processed webhook events for idempotency:
+
+```sql
+CREATE TABLE stripe_webhook_events (
+  event_id TEXT PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  event_created_at TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL, -- 'processing' | 'processed' | 'failed'
+  error_message TEXT,
+  processed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### stripe_webhook_unmatched Table
+
+Stores events where user identity couldn't be resolved:
+
+```sql
+CREATE TABLE stripe_webhook_unmatched (
+  event_id TEXT PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  stripe_customer_id TEXT,
+  stripe_subscription_id TEXT,
+  payload_excerpt JSONB,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+## Go-Live Checklist
+
+Before switching to Live Mode:
+
+- [ ] Review [Stripe Go-Live Checklist](https://docs.stripe.com/get-started/checklist/go-live)
+- [ ] Create live-mode Products and Prices
+- [ ] Update all 6 Price ID environment variables with live-mode IDs
+- [ ] Switch `STRIPE_SECRET_KEY` from `sk_test_` to `sk_live_`
+- [ ] Create live-mode webhook endpoint
+- [ ] Update `STRIPE_WEBHOOK_SECRET` with live-mode webhook secret
+- [ ] Test a live-mode checkout with a real card (then refund)
+- [ ] Verify webhook events are processed correctly in production
+- [ ] Enable fraud detection in Stripe Radar
+- [ ] Set up billing email notifications
+
+## Troubleshooting
+
+### "No signature found" Error
+
+**Cause:** Missing or incorrect `STRIPE_WEBHOOK_SECRET`.
+
+**Solution:** Verify the webhook secret matches the one shown in Stripe Dashboard (or Stripe CLI output).
+
+### Webhook Event Not Processing
+
+**Cause:** Webhook endpoint unreachable or returning errors.
+
+**Solution:**
+1. Check Stripe Dashboard → Webhooks → click your endpoint → view event logs
+2. Verify your server is publicly accessible (use ngrok for local testing)
+3. Check server logs for errors in webhook handler
+
+### Subscription Not Found in Database
+
+**Cause:** Identity resolution failed or webhook processing error.
+
+**Solution:**
+1. Check `stripe_webhook_unmatched` table for the event
+2. Verify `metadata.user_id` is set when creating checkout sessions
+3. Review logs in `stripe_webhook_events` table
+
+## Security Considerations
+
+<Warning>
+  **Webhook Signature Verification:** Always verify Stripe webhook signatures before processing events. This prevents attackers from forging webhook requests.
+</Warning>
+
+<Warning>
+  **Environment Separation:** Use separate Stripe accounts (or at minimum, separate API keys) for test and live modes. Never use live-mode keys in development.
+</Warning>
+
+<Warning>
+  **PCI Compliance:** Never handle raw card numbers in your application. Always use Stripe Checkout or Stripe Elements for payment collection.
+</Warning>
+
+## Next Steps
+
+- [Reddit OAuth Integration](/integrations/reddit-oauth) - Connect user accounts
+- [OpenRouter AI Integration](/integrations/openrouter-ai) - Configure analysis quotas per plan

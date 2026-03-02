@@ -1,0 +1,159 @@
+---
+title: "Reddit OAuth Token Exchange"
+api: "POST /api/reddit/oauth/exchange"
+description: "Exchange Reddit OAuth authorization code for encrypted access and refresh tokens"
+---
+
+## Overview
+
+This endpoint completes the Reddit OAuth 2.0 flow by exchanging an authorization code for access and refresh tokens. The tokens are encrypted using AES-256-GCM and stored securely in the database.
+
+## Authentication
+
+Requires valid Supabase JWT token in Authorization header:
+
+```
+Authorization: Bearer <supabase_access_token>
+```
+
+## Request Body
+
+<ParamField body="code" type="string" required>
+  The authorization code received from Reddit OAuth callback
+</ParamField>
+
+<ParamField body="reconnect_account_id" type="string">
+  Optional UUID of an existing reddit_accounts row to reconnect. If provided, the endpoint verifies that the OAuth user matches the stored reddit_user_id before updating tokens.
+</ParamField>
+
+## Response
+
+<ResponseField name="ok" type="boolean">
+  Indicates successful token exchange and storage
+</ResponseField>
+
+<ResponseField name="account" type="object">
+  The connected Reddit account details
+  
+  <ResponseField name="account.id" type="string">
+    UUID of the reddit_accounts row
+  </ResponseField>
+  
+  <ResponseField name="account.username" type="string">
+    Reddit username (e.g. "spez")
+  </ResponseField>
+</ResponseField>
+
+## Token Encryption
+
+All Reddit tokens are encrypted at rest using **AES-256-GCM** encryption:
+
+1. **Encryption Key**: Must be set in `TOKEN_ENCRYPTION_KEY` environment variable (base64-encoded 32-byte key)
+2. **IV Generation**: Random 12-byte IV generated per encryption
+3. **Storage Format**: `v1:<iv_base64>:<tag_base64>:<ciphertext_base64>`
+4. **Database Storage**: Encrypted tokens stored in `reddit_account_tokens` table:
+   - `access_token_enc` - Encrypted Reddit access token
+   - `refresh_token_enc` - Encrypted Reddit refresh token
+
+The encryption is handled by the `encryptString()` function in server.js:297-311.
+
+## Subscription Requirements
+
+This endpoint enforces subscription-based account limits:
+
+- **Free tier**: No Reddit accounts allowed
+- **Paid tiers**: Max accounts determined by `plan_definitions.max_reddit_accounts`
+- Returns `403` with `subscription_required` if user has no active subscription
+- Returns `403` with `quota_exceeded` if account limit reached
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Human-readable error message
+</ResponseField>
+
+<ResponseField name="details" type="string">
+  Additional error context (may be null)
+</ResponseField>
+
+### Common Error Codes
+
+| Status | Error | Description |
+|--------|-------|-------------|
+| 400 | Missing OAuth code | No `code` provided in request body |
+| 400 | Invalid reconnect account id | `reconnect_account_id` is not a valid UUID |
+| 400 | Reconnect account not found for this user | Specified account doesn't exist or doesn't belong to user |
+| 403 | subscription_required | User has no active subscription |
+| 403 | quota_exceeded | User has reached their Reddit account limit |
+| 409 | Reconnect requires the same Reddit account | OAuth username doesn't match the account being reconnected |
+| 500 | Reddit OAuth is not configured | `REDDIT_CLIENT_ID` or `REDDIT_CLIENT_SECRET` not set |
+| 500 | Failed to encrypt Reddit tokens | `TOKEN_ENCRYPTION_KEY` missing or invalid |
+| 502 | Invalid token response from Reddit | Reddit token exchange failed |
+| 502 | Invalid user response from Reddit | Reddit /api/v1/me request failed |
+
+## Example Request
+
+```bash
+curl -X POST https://api.subpirateapp.com/api/reddit/oauth/exchange \
+  -H "Authorization: Bearer eyJhbGc..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "code": "abc123xyz"
+  }'
+```
+
+## Example Success Response
+
+```json
+{
+  "ok": true,
+  "account": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "username": "example_user"
+  }
+}
+```
+
+## Example Error Response
+
+```json
+{
+  "error": "quota_exceeded",
+  "feature": "reddit_accounts",
+  "limit": 3,
+  "upgrade_required": true,
+  "message": "You've reached your limit of 3 Reddit accounts. Upgrade for more."
+}
+```
+
+## Implementation Details
+
+### OAuth Flow
+
+1. **Code Exchange**: Calls `https://www.reddit.com/api/v1/access_token` with Basic auth (client_id:client_secret)
+2. **User Fetch**: Calls `https://oauth.reddit.com/api/v1/me` with access token
+3. **Account Upsert**: Uses `upsert_reddit_account_with_limit` stored procedure to enforce quota
+4. **Token Encryption**: Encrypts access_token and refresh_token using AES-256-GCM
+5. **Token Storage**: Upserts to `reddit_account_tokens` with 3 retry attempts
+6. **Fallback Recovery**: On RLS/FK errors, falls back to service role client
+
+### Retry Logic
+
+Token upsert includes retry logic for transient failures (server.js:420-442):
+
+- **Max attempts**: 3
+- **Retry conditions**: PostgreSQL error codes `23503`, `40001`, `40P01` or RLS policy violations
+- **Backoff**: Linear (150ms, 300ms, 450ms)
+- **Verification**: After failure, verifies token row exists before returning error
+
+### Reconnect Flow
+
+When `reconnect_account_id` is provided:
+
+1. Normalizes UUID (accepts both dashed and compact formats)
+2. Verifies account exists and belongs to user
+3. Validates OAuth username matches stored `reddit_user_id`
+4. Updates existing account row instead of creating new one
+5. Returns 409 conflict if usernames don't match
+
+See `executeRedditOAuthExchangeFlow()` in api/_lib/redditOAuthExchangeFlow.js:64-227 for full implementation.

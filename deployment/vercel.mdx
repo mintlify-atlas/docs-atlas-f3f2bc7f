@@ -1,0 +1,400 @@
+---
+title: 'Vercel Deployment'
+description: 'Deploy SubPirate Pro to Vercel with serverless functions and cron jobs'
+---
+
+## Overview
+
+SubPirate Pro is optimized for deployment on Vercel using serverless functions. The architecture includes:
+
+- **Frontend**: Static SPA built with Vite (served from `dist/`)
+- **API**: Serverless functions in `api/` directory
+- **Cron jobs**: Automated campaign dispatch every minute
+
+## Architecture
+
+### Dual-Server Design
+
+SubPirate Pro uses different server implementations for local vs. production:
+
+- **Local development**: Express monolith (`server.js`) with all routes inline
+- **Vercel production**: Serverless functions in `api/` directory that mirror Express routes
+
+This architecture provides:
+- Fast local development with hot reload
+- Scalable production deployment with automatic scaling
+- Shared business logic via `api/_lib/` utilities
+
+### Serverless Functions
+
+The `api/` directory contains Vercel serverless functions:
+
+```
+api/
+├── _lib/                    # Shared utilities
+│   ├── auth.js             # Supabase JWT verification
+│   ├── cors.js             # CORS middleware
+│   ├── crypto.js           # Token encryption (AES-256-GCM)
+│   ├── redditClient.js     # Reddit API client
+│   ├── openrouter.js       # OpenRouter LLM client
+│   ├── campaignRunner.js   # Campaign scheduling engine
+│   └── redditPoster.js     # Reddit post submission
+├── health.js               # Health check endpoint
+├── reddit/                 # Reddit OAuth & API proxy
+├── openrouter/             # Subreddit analysis
+├── campaigns/              # Campaign CRUD + runner
+└── internal/               # Cron endpoints (protected)
+```
+
+## Deployment Steps
+
+<Steps>
+  <Step title="Create Vercel project">
+    If you haven't already, create a new Vercel project:
+
+    <CodeGroup>
+    ```bash Vercel CLI
+    npm i -g vercel
+    vercel login
+    vercel link
+    ```
+
+    ```bash Web Dashboard
+    # Visit https://vercel.com/new
+    # Import your GitHub repository
+    # Vercel will auto-detect the Vite configuration
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Configure environment variables">
+    Set all required environment variables in Vercel dashboard or via CLI:
+
+    ```bash
+    # Essential variables
+    vercel env add SUPABASE_URL production
+    vercel env add SUPABASE_ANON_KEY production
+    vercel env add OPENROUTER_API_KEY production
+    vercel env add REDDIT_CLIENT_ID production
+    vercel env add REDDIT_CLIENT_SECRET production
+    vercel env add REDDIT_USER_AGENT production
+    vercel env add TOKEN_ENCRYPTION_KEY production
+    vercel env add APP_ORIGIN production
+    vercel env add CORS_ORIGINS production
+    ```
+
+    <Accordion title="Complete environment variable list">
+      ```bash
+      # Supabase
+      SUPABASE_URL=https://your-project.supabase.co
+      SUPABASE_ANON_KEY=<anon key>
+      SUPABASE_SERVICE_ROLE_KEY=<service role key>
+
+      # OpenRouter (for subreddit analysis)
+      OPENROUTER_API_KEY=<your key>
+
+      # Reddit OAuth
+      REDDIT_CLIENT_ID=<client id>
+      REDDIT_CLIENT_SECRET=<client secret>
+      REDDIT_USER_AGENT="web:SubPirate:1.0.0 (by /u/yourusername)"
+      REDDIT_REDIRECT_URI=https://your-domain.com/auth/reddit/callback
+
+      # Encryption (generate with: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
+      TOKEN_ENCRYPTION_KEY=<base64-encoded 32-byte key>
+
+      # Origins
+      APP_ORIGIN=https://your-domain.com
+      PUBLIC_ORIGIN=https://your-domain.com
+      CORS_ORIGINS=https://your-domain.com
+
+      # Speakeasy (optional)
+      SPEAKEASY_PASSWORD=<secret password>
+
+      # Campaign scheduler
+      CAMPAIGN_SCHEDULER_ENABLED=true
+      CAMPAIGN_MAX_WORKERS=1
+      CRON_SECRET=<secret for cron authentication>
+      CRON_IP_ALLOWLIST=<optional comma-separated IPs>
+
+      # Stripe (if using payments)
+      STRIPE_SECRET_KEY=<secret key>
+      STRIPE_WEBHOOK_SECRET=<webhook secret>
+      STRIPE_PRICE_STARTER_MONTHLY=<price id>
+      STRIPE_PRICE_STARTER_ANNUAL=<price id>
+      STRIPE_PRICE_CREATOR_MONTHLY=<price id>
+      STRIPE_PRICE_CREATOR_ANNUAL=<price id>
+      STRIPE_PRICE_PRO_MONTHLY=<price id>
+      STRIPE_PRICE_PRO_ANNUAL=<price id>
+      ```
+    </Accordion>
+
+    <Warning>
+      Never use `VITE_*` prefix for secrets on the server. Only use `VITE_*` for public values that are bundled into the browser.
+    </Warning>
+  </Step>
+
+  <Step title="Deploy to preview">
+    Deploy to a preview environment to test before production:
+
+    ```bash
+    vercel deploy
+    ```
+
+    This creates a unique preview URL for testing.
+  </Step>
+
+  <Step title="Deploy to production">
+    Once preview is verified, deploy to production:
+
+    ```bash
+    vercel deploy --prod
+    ```
+
+    Or push to your main branch if you've enabled automatic deployments.
+  </Step>
+</Steps>
+
+## Vercel Configuration
+
+The `vercel.json` file configures the deployment:
+
+```json vercel.json
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "crons": [
+    {
+      "path": "/api/internal/campaigns/dispatch",
+      "schedule": "* * * * *"
+    }
+  ],
+  "rewrites": [
+    { "source": "/health", "destination": "/api/health" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ]
+}
+```
+
+### Build Configuration
+
+- **buildCommand**: Runs `npm run build` which type-checks and builds the Vite SPA
+- **outputDirectory**: Static files output to `dist/` directory
+
+### Cron Jobs
+
+The cron configuration runs campaign dispatch every minute:
+
+```json
+"crons": [
+  {
+    "path": "/api/internal/campaigns/dispatch",
+    "schedule": "* * * * *"  // Every minute
+  }
+]
+```
+
+The campaign dispatcher:
+1. Fetches all campaigns scheduled to run
+2. Pairs Reddit accounts with target subreddits
+3. Submits posts via Reddit API
+4. Records results in `campaign_runs` and `campaign_run_attempts` tables
+
+<Tip>
+  Cron jobs on Vercel are available on Pro plans and above. For hobby plans, consider using an external cron service like cron-job.org to hit the `/api/internal/campaigns/dispatch` endpoint.
+</Tip>
+
+### Cron Authentication
+
+Protect your cron endpoint with a secret:
+
+```bash .env
+CRON_SECRET=your-secret-value
+```
+
+The cron handler checks for this in the `x-cron-secret` header:
+
+```javascript
+if (req.headers['x-cron-secret'] !== process.env.CRON_SECRET) {
+  return res.status(401).json({ error: 'Unauthorized' });
+}
+```
+
+Optionally add IP allowlisting:
+
+```bash .env
+CRON_IP_ALLOWLIST=76.223.0.0/16,35.190.0.0/16
+```
+
+### URL Rewrites
+
+Rewrites handle routing:
+
+1. `/health` → `/api/health` - Health check endpoint
+2. All non-API routes → `/index.html` - SPA fallback for client-side routing
+
+This ensures React Router can handle all frontend routes while API routes are preserved.
+
+## Environment Variables
+
+### Required Variables
+
+These variables are **required** for deployment:
+
+| Variable | Description |
+|----------|-------------|
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_ANON_KEY` | Supabase anonymous key |
+| `OPENROUTER_API_KEY` | OpenRouter API key for LLM analysis |
+| `REDDIT_CLIENT_ID` | Reddit OAuth app client ID |
+| `REDDIT_CLIENT_SECRET` | Reddit OAuth app secret |
+| `REDDIT_USER_AGENT` | Reddit API user agent string |
+| `TOKEN_ENCRYPTION_KEY` | Base64-encoded 32-byte key for AES-256-GCM |
+| `APP_ORIGIN` | Your app's origin (e.g., `https://app.example.com`) |
+| `CORS_ORIGINS` | Comma-separated allowed origins |
+
+### Optional Variables
+
+| Variable | Description | Default |
+|----------|-------------|----------|
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key (for admin operations) | None |
+| `SPEAKEASY_PASSWORD` | Password for speakeasy access endpoints | None |
+| `CAMPAIGN_SCHEDULER_ENABLED` | Enable campaign scheduler | `true` |
+| `CAMPAIGN_MAX_WORKERS` | Max concurrent campaign workers | `1` |
+| `CRON_SECRET` | Secret for cron authentication | None |
+| `CRON_IP_ALLOWLIST` | Comma-separated IP allowlist | None |
+| `REDDIT_REDIRECT_URI` | Override Reddit OAuth callback URI | Computed |
+
+## Monitoring & Debugging
+
+### Vercel Logs
+
+View real-time logs in Vercel dashboard:
+
+1. Go to your project in Vercel
+2. Click "Logs" in the top navigation
+3. Filter by function, status code, or search term
+
+### Function Metrics
+
+Monitor serverless function performance:
+
+- **Invocations**: Number of function calls
+- **Duration**: Average execution time
+- **Errors**: Failed invocations
+- **Cold starts**: First invocation latency
+
+### Health Check
+
+Verify your deployment is healthy:
+
+```bash
+curl https://your-domain.com/health
+```
+
+Expected response:
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-03-02T15:30:00.000Z"
+}
+```
+
+## Troubleshooting
+
+### Build failures
+
+**Problem**: Build fails with TypeScript errors
+
+**Solution**: Run type-check locally first:
+```bash
+npm run typecheck
+```
+
+### Environment variable issues
+
+**Problem**: API calls fail with authentication errors
+
+**Solution**: Verify environment variables are set:
+```bash
+vercel env ls
+```
+
+Ensure variables are set for the correct environment (production, preview, development).
+
+### CORS errors
+
+**Problem**: Browser shows CORS errors
+
+**Solution**: Ensure `CORS_ORIGINS` includes your domain:
+```bash
+CORS_ORIGINS=https://your-domain.com,https://www.your-domain.com
+```
+
+### Cron jobs not running
+
+**Problem**: Campaigns not dispatching automatically
+
+**Solution**:
+1. Verify you're on a Vercel Pro plan (required for cron)
+2. Check cron logs in Vercel dashboard
+3. Manually trigger: `curl https://your-domain.com/api/internal/campaigns/dispatch -H "x-cron-secret: your-secret"`
+
+### Function timeouts
+
+**Problem**: Serverless functions timeout (10s hobby, 60s pro)
+
+**Solution**:
+- Optimize long-running operations
+- Use async/await properly
+- Consider splitting into multiple requests
+- Upgrade to Pro for 60s timeout
+
+## Non-Vercel Deployment
+
+To deploy on other platforms using the Express server:
+
+<Steps>
+  <Step title="Build the SPA">
+    ```bash
+    npm run build
+    ```
+  </Step>
+
+  <Step title="Start the Express server">
+    ```bash
+    npm start
+    ```
+
+    The server serves the built SPA from `dist/` and handles all API routes.
+  </Step>
+
+  <Step title="Configure environment">
+    Set all required environment variables (same as Vercel, minus Vercel-specific variables).
+  </Step>
+
+  <Step title="Set up process manager">
+    Use PM2, systemd, or Docker to keep the server running:
+
+    ```bash
+    # PM2 example
+    pm2 start server.js --name subpirate
+    pm2 save
+    pm2 startup
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  You'll need to set up your own cron job for campaign dispatch if not using Vercel cron.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Supabase Setup" icon="database" href="/deployment/supabase">
+    Configure your Supabase project
+  </Card>
+  <Card title="Local Development" icon="code" href="/deployment/local-development">
+    Set up local environment
+  </Card>
+</CardGroup>

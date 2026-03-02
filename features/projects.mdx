@@ -1,0 +1,355 @@
+---
+title: "Projects"
+description: "Organize subreddits, collaborate with team members, and manage campaigns by project"
+---
+
+Projects help you organize analyzed subreddits into logical groups, making it easier to manage campaigns and collaborate with team members. Each project can contain multiple subreddits and has its own sharing and access control settings.
+
+## Creating a Project
+
+<Steps>
+  <Step title="Open the Projects Page">
+    Navigate to the Projects section from the main menu. You'll see all your existing projects displayed as cards.
+  </Step>
+  
+  <Step title="Click New Project">
+    Click the "New Project" button in the header or the "Add New Project" card in the grid.
+  </Step>
+  
+  <Step title="Fill Project Details">
+    Enter the following information:
+    
+    - **Name** (required): A descriptive name like "SaaS Launch Q1" or "Tech Communities"
+    - **Description** (optional): Additional context about the project's purpose
+    - **Image URL** (optional): Custom banner image for the project card
+    
+    If you don't provide an image, a unique generated avatar will be created based on the project name.
+  </Step>
+  
+  <Step title="Create">
+    Click "Create Project" to save. The new project appears at the top of your projects list.
+  </Step>
+</Steps>
+
+## Project Dashboard
+
+Each project has its own dashboard where you can manage subreddits and settings:
+
+### Header Section
+
+- **Project Icon/Banner**: Visual identifier (custom image or generated avatar)
+- **Project Name**: Display name with breadcrumb navigation back to projects list
+- **Description**: Optional details about the project's purpose
+- **Action Buttons**:
+  - **Share**: Open sharing modal to invite team members
+  - **Settings**: Edit project details or delete the project
+
+### Subreddit List
+
+The main project view shows all subreddits you've added to this project:
+
+<Card title="Subreddit Cards" icon="list">
+  Each subreddit displays:
+  
+  - Subreddit icon and name (r/subredditname)
+  - Marketing-friendly score with color coding
+  - Subscriber count and active users
+  - Quick actions: Remove from project, View analysis
+  
+  Click any subreddit card to view its full analysis.
+</Card>
+
+### Adding Subreddits to Projects
+
+There are two ways to add subreddits to a project:
+
+**From Analysis Page**
+
+<Steps>
+  <Step title="Analyze a Subreddit">
+    Complete a subreddit analysis on the main dashboard.
+  </Step>
+  
+  <Step title="Click Save to Project">
+    In the analysis header, click "Save to Project" (or "Save Subreddit" if it's not yet saved).
+  </Step>
+  
+  <Step title="Select Project">
+    A modal appears showing:
+    - All your existing projects as selectable cards
+    - "Create New Project" option
+    - "Save to My List" option (saves without adding to a project)
+    
+    Click the project where you want to add this subreddit.
+  </Step>
+</Steps>
+
+**From Project Dashboard**
+
+<Steps>
+  <Step title="Open Project">
+    Navigate to the specific project where you want to add subreddits.
+  </Step>
+  
+  <Step title="Add Subreddit Button">
+    Click "Add Subreddit" in the project view.
+  </Step>
+  
+  <Step title="Select from Saved">
+    Choose from your list of previously analyzed and saved subreddits, or analyze a new one and add it directly.
+  </Step>
+</Steps>
+
+## Role-Based Access Control
+
+Projects support team collaboration with different permission levels:
+
+### Roles
+
+<Card title="Owner" icon="crown">
+  Full control over the project:
+  
+  - Edit project details (name, description, image)
+  - Add and remove subreddits
+  - Invite and remove team members
+  - Change member roles
+  - Delete the project
+  - Create campaigns using project subreddits
+</Card>
+
+<Card title="Admin" icon="shield">
+  Management permissions:
+  
+  - Add and remove subreddits
+  - Invite team members (cannot remove owner)
+  - Change roles for editors and viewers
+  - Create and manage campaigns
+  - Cannot delete the project
+</Card>
+
+<Card title="Editor" icon="edit">
+  Content management:
+  
+  - Add subreddits to the project
+  - View all project subreddits and analyses
+  - Create campaigns using project subreddits
+  - Cannot invite members or change settings
+</Card>
+
+<Card title="Viewer" icon="eye">
+  Read-only access:
+  
+  - View project details and subreddit list
+  - See subreddit analyses
+  - View campaign results (if added to campaigns)
+  - Cannot modify anything
+</Card>
+
+### Sharing Projects
+
+<Steps>
+  <Step title="Open Share Modal">
+    Click the "Share" button in the project header. You must be the owner or an admin to share projects.
+  </Step>
+  
+  <Step title="Invite by Email">
+    Enter the team member's email address and select their role from the dropdown:
+    - Admin
+    - Editor  
+    - Viewer
+    
+    Click "Send Invite".
+  </Step>
+  
+  <Step title="Share Invite Link">
+    The system generates an invite link and token. Share this with your team member via your preferred communication method.
+    
+    **Note**: Email delivery is planned for a future release. Currently, you must share the invite link manually.
+  </Step>
+  
+  <Step title="Track Invites">
+    The Share modal shows:
+    - Pending invites with status and expiration
+    - Current members with their roles
+    - Options to resend or cancel invites
+  </Step>
+</Steps>
+
+### Managing Team Members
+
+In the Share modal, you can:
+
+**Change Roles**
+- Click the role dropdown next to any member
+- Select a new role (Admin, Editor, or Viewer)
+- Changes take effect immediately
+- You cannot change the owner's role
+
+**Remove Members**
+- Click the "Remove" button next to a member
+- Confirm the removal
+- The member loses all access to the project
+- They can be re-invited later if needed
+
+**View Member Activity**
+- See when each member was added
+- Check who invited them
+- Track pending vs. accepted invites
+
+## Project Settings
+
+Click the "Settings" button in the project header to modify project details:
+
+### Edit Details
+
+- **Name**: Update the project name (required)
+- **Description**: Modify or add a description
+- **Image URL**: Change the project banner/icon
+- **Save Changes**: Applies updates immediately
+
+### Delete Project
+
+<Warning>
+  Deleting a project is permanent and cannot be undone.
+</Warning>
+
+When you delete a project:
+- The project and all member associations are removed
+- Subreddits remain in your saved list (they're not deleted)
+- Any campaigns using this project continue to function (subreddit links persist)
+- Team members lose access to this project
+
+To delete:
+1. Click "Delete Project" in the Settings modal
+2. Confirm the deletion in the popup
+3. You're redirected to the Projects list
+
+## Using Projects with Campaigns
+
+Projects integrate seamlessly with the campaign system:
+
+### Selecting Subreddit Targets
+
+When creating or editing a campaign:
+
+<Steps>
+  <Step title="Open Campaign Settings">
+    Navigate to a campaign's "Accounts" or "Overview" tab.
+  </Step>
+  
+  <Step title="Select Subreddit Targets">
+    You'll see a list of all subreddits from your saved list, organized by project (if applicable).
+  </Step>
+  
+  <Step title="Choose from Project">
+    Filter or select subreddits that belong to specific projects. This makes it easy to target all subreddits in a project at once.
+  </Step>
+</Steps>
+
+### Project-Based Campaign Organization
+
+Best practices for organizing campaigns by project:
+
+1. **One Project Per Campaign Theme**: Create projects like "Product Launch", "Weekly Promotions", "Community Building"
+2. **Add Relevant Subreddits**: Analyze and add 5-15 subreddits to each project
+3. **Create Targeted Campaigns**: Build campaigns that pull from specific projects
+4. **Track Performance**: Compare campaign results across projects
+
+## Example Project Workflows
+
+### Startup Launch Campaign
+
+<Steps>
+  <Step title="Create Project">
+    Name: "Startup Launch - Tech Communities"
+    
+    Description: "Target subreddits for our product launch in Q1 2024"
+  </Step>
+  
+  <Step title="Analyze and Add Subreddits">
+    Research and analyze 10+ tech-focused subreddits:
+    - r/startups
+    - r/SaaS
+    - r/entrepreneur
+    - r/technology
+    
+    Add those with 50%+ marketing-friendly scores to the project.
+  </Step>
+  
+  <Step title="Invite Team">
+    - Marketing Manager: Admin role
+    - Content Writers: Editor role
+    - Stakeholders: Viewer role
+  </Step>
+  
+  <Step title="Create Campaign">
+    Build an automated posting campaign using all subreddits from this project as targets.
+  </Step>
+</Steps>
+
+### Agency Client Management
+
+<Steps>
+  <Step title="Create Client Projects">
+    One project per client:
+    - "Client A - Fitness Niche"
+    - "Client B - Finance Niche"
+    - "Client C - Gaming Niche"
+  </Step>
+  
+  <Step title="Add Client-Specific Subreddits">
+    Research and organize subreddits by client needs.
+  </Step>
+  
+  <Step title="Invite Client as Viewer">
+    Give clients view-only access to see:
+    - Which subreddits you're targeting
+    - Analysis data and strategies
+    - Campaign performance (when integrated)
+  </Step>
+</Steps>
+
+## Project Limits
+
+Current plan limits:
+
+- **Free Plan**: 3 projects, unlimited subreddits per project
+- **Pro Plan**: Unlimited projects and subreddits
+- **Team Plan**: Unlimited + priority support
+
+<Info>
+  Check your current plan limits in Account Settings. Upgrade anytime to create more projects.
+</Info>
+
+## Tips for Effective Project Management
+
+<Card title="Use Descriptive Names" icon="tag">
+  Name projects based on:
+  - Campaign goals: "Q1 Product Launch"
+  - Client names: "Acme Corp - Reddit Strategy"
+  - Content themes: "Weekly Tech Tips"
+  - Niche focus: "SaaS Communities"
+</Card>
+
+<Card title="Regular Cleanup" icon="trash">
+  Periodically review projects:
+  - Remove underperforming subreddits
+  - Archive completed campaign projects
+  - Update project descriptions as strategies evolve
+</Card>
+
+<Card title="Team Communication" icon="message">
+  Use project descriptions to:
+  - Document campaign strategies
+  - Note best practices learned
+  - Track which team member manages what
+  - Link to external docs or briefs
+</Card>
+
+<Card title="Strategic Organization" icon="folder">
+  Create projects based on:
+  - Content calendars (monthly themes)
+  - Product lines (different products → different communities)
+  - Marketing funnels (awareness vs. conversion subreddits)
+  - Geography (region-specific communities)
+</Card>

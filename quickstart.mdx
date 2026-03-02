@@ -1,80 +1,380 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Get up and running with SubPirate Pro in minutes - from signup to your first subreddit analysis"
 ---
 
-## Get started in three steps
+# Quickstart
 
-Get your documentation site running locally and make your first customization.
+This guide will walk you through setting up SubPirate Pro and running your first subreddit analysis. You'll create an account, connect a Reddit account, analyze a subreddit, and organize it into a project.
 
-### Step 1: Set up your local environment
+<Note>
+  This guide assumes you've already completed the [Environment setup](/environment-setup) and have the development servers running.
+</Note>
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+## Prerequisites
+
+Before you begin, make sure you have:
+
+- Node.js 18+ installed
+- A Reddit account to analyze subreddits
+- A Reddit app registered at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps)
+- Supabase project created with proper configuration
+- OpenRouter API key for AI-powered analysis
+
+<Steps>
+  <Step title="Create your account">
+    Navigate to the signup page and create your SubPirate Pro account.
+
+    SubPirate Pro uses Supabase Auth with support for:
+    - Email and password authentication
+    - Google OAuth (if configured)
+    - Email confirmations (recommended for production)
+
+    ```bash
+    # Start the development servers if not already running
+    npm run dev:all
+    ```
+
+    Visit `http://localhost:5173` and click "Sign up" to create your account.
+
+    <Info>
+      In development, you can optionally enable local admin bypass by setting `VITE_LOCAL_ADMIN_BYPASS=1` and `VITE_LOCAL_ADMIN_TOKEN` in your `.env` file. This shows a "Local Admin Login (dev)" button on the login page for quick testing.
+    </Info>
+
+    After signing up, a profile will be automatically created via a Supabase database trigger. Check your email for the confirmation link (if email confirmations are enabled).
+  </Step>
+
+  <Step title="Connect your Reddit account">
+    Once logged in, navigate to the Reddit accounts section and connect your first Reddit account.
+
+    ### How Reddit OAuth works in SubPirate Pro
+
+    1. Click "Connect Reddit Account" to initiate OAuth flow
+    2. You'll be redirected to Reddit's authorization page
+    3. After approving, Reddit redirects back with an authorization code
+    4. SubPirate Pro exchanges the code for access and refresh tokens
+    5. Tokens are encrypted with AES-256-GCM and stored securely
+
+    <CodeGroup>
+    ```javascript OAuth flow (simplified)
+    // Browser initiates OAuth
+    const authUrl = `https://www.reddit.com/api/v1/authorize?client_id=${VITE_REDDIT_APP_ID}&response_type=code&state=${state}&redirect_uri=${redirectUri}&duration=permanent&scope=identity,read,submit`;
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    // Server exchanges code for tokens
+    const response = await fetch('https://www.reddit.com/api/v1/access_token', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(`${REDDIT_CLIENT_ID}:${REDDIT_CLIENT_SECRET}`).toString('base64')}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: `grant_type=authorization_code&code=${code}&redirect_uri=${redirectUri}`
+    });
+    ```
 
-### Step 2: Deploy your changes
+    ```javascript Token encryption
+    // Tokens are encrypted before storage
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const encrypted = Buffer.concat([
+      cipher.update(token, 'utf8'),
+      cipher.final()
+    ]);
+    const authTag = cipher.getAuthTag();
+    ```
+    </CodeGroup>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    <Warning>
+      Your Reddit app must be configured as a "web app" (not "installed app" or "script") with redirect URIs matching your environment:
+      - Development: `http://localhost:5173/auth/reddit/callback`
+      - Production: `https://your-domain.com/auth/reddit/callback`
+    </Warning>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    The connected account will appear in your accounts list with the Reddit username and connection status.
+  </Step>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+  <Step title="Analyze your first subreddit">
+    Now you're ready to analyze a subreddit for marketing potential.
 
-### Step 3: Go live
+    ### Running an analysis
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    1. Navigate to the subreddit analysis page
+    2. Enter a subreddit name (e.g., "technology", "gaming", "fitness")
+    3. Click "Analyze" to start the AI-powered analysis
+    4. Wait for the analysis to complete (typically 10-30 seconds)
+
+    ### What happens during analysis
+
+    SubPirate Pro uses a sophisticated analysis pipeline:
+
+    1. **Context management**: `AnalysisContext` handles UI state
+    2. **Worker coordination**: `analysisWorkerManager` spawns Web Workers for background processing
+    3. **API call**: Worker calls `POST /api/openrouter/analyze-subreddit` with subreddit data
+    4. **AI processing**: OpenRouter API uses Google Gemini 3 Flash Preview to analyze the subreddit
+    5. **Caching**: Results stored in IndexedDB for instant future retrieval
+
+    <CodeGroup>
+    ```typescript Analysis request
+    // Frontend initiates analysis
+    const result = await secureFetch('/api/openrouter/analyze-subreddit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subreddit: 'technology',
+        metadata: {
+          subscribers: 12500000,
+          activeUsers: 45000,
+          description: 'A subreddit for discussion of technology...'
+        }
+      })
+    });
+    ```
+
+    ```javascript OpenRouter API call
+    // Server forwards to OpenRouter
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-3-flash-preview',
+        messages: [{
+          role: 'user',
+          content: `Analyze r/${subreddit} for marketing potential...`
+        }]
+      })
+    });
+    ```
+    </CodeGroup>
+
+    ### Analysis results
+
+    Your analysis will include:
+
+    - **Community size**: Subscriber count and active user metrics
+    - **Engagement patterns**: Peak activity times and posting frequency
+    - **Content preferences**: Popular post types and topics
+    - **Marketing potential**: Receptiveness to promotional content
+    - **Optimal strategy**: Recommended posting approach and timing
+
+    <Info>
+      Analysis results are cached in IndexedDB. Re-analyzing the same subreddit will instantly return cached results unless you explicitly refresh.
+    </Info>
+  </Step>
+
+  <Step title="Create a project">
+    Organize your analyzed subreddits into projects for better management.
+
+    ### Why use projects?
+
+    Projects help you:
+    - Group related subreddits by campaign or niche
+    - Collaborate with team members using role-based permissions
+    - Track which subreddits are part of specific marketing initiatives
+    - Manage campaigns targeting specific subreddit groups
+
+    ### Creating your first project
+
+    1. Navigate to the projects page
+    2. Click "Create Project"
+    3. Enter a project name (e.g., "Tech Product Launch")
+    4. Optionally add a description
+    5. Click "Create"
+
+    ### Adding subreddits to projects
+
+    After creating a project:
+
+    1. Open the project details
+    2. Click "Add Subreddit"
+    3. Select from your analyzed subreddits
+    4. The subreddit is now part of your project
+
+    ### Project permissions
+
+    SubPirate Pro supports role-based access control:
+
+    - **Owner**: Full control including deletion and member management
+    - **Admin**: Can manage subreddits and campaigns, invite members
+    - **Editor**: Can edit campaigns and content but not invite others
+    - **Viewer**: Read-only access to project data
+
+    <CodeGroup>
+    ```typescript Project creation
+    const { data: project } = await supabase
+      .from('projects')
+      .insert({
+        name: 'Tech Product Launch',
+        description: 'Marketing campaign for new SaaS product'
+      })
+      .select()
+      .single();
+
+    // Creator is automatically added as owner
+    await supabase
+      .from('project_members')
+      .insert({
+        project_id: project.id,
+        user_id: user.id,
+        role: 'owner'
+      });
+    ```
+
+    ```typescript Adding subreddits
+    await supabase
+      .from('project_subreddits')
+      .insert({
+        project_id: projectId,
+        subreddit_id: subredditId,
+        added_by: userId
+      });
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Optional: Set up a campaign">
+    Take your marketing to the next level by creating an automated posting campaign.
+
+    ### Campaign features
+
+    - **Content versioning**: Create multiple versions of your content
+    - **Scheduling**: Set specific times and dates for posts
+    - **Account pairing**: Automatically match Reddit accounts with subreddits
+    - **Run tracking**: Monitor all posting attempts and results
+
+    ### Creating a campaign
+
+    1. Open your project
+    2. Navigate to the campaigns tab
+    3. Click "Create Campaign"
+    4. Enter campaign details:
+       - Name and description
+       - Target subreddits from your project
+       - Content versions (title, body, optional image URL)
+       - Schedule (start/end dates, frequency)
+    5. Save the campaign
+
+    ### Running campaigns
+
+    Campaigns can be triggered:
+    - **Manually**: Click "Run Now" to execute immediately
+    - **Scheduled**: Automatic execution via cron job (requires `CAMPAIGN_SCHEDULER_ENABLED=true`)
+
+    <Warning>
+      Campaign execution requires proper configuration of the campaign scheduler. In production, set up a cron job to call `/api/campaigns/cron` with the `CRON_SECRET` header.
+    </Warning>
+
+    <CodeGroup>
+    ```json Vercel cron configuration
+    // vercel.json
+    {
+      "crons": [{
+        "path": "/api/campaigns/cron",
+        "schedule": "*/5 * * * *"
+      }]
+    }
+    ```
+
+    ```javascript Campaign runner
+    // api/_lib/campaignRunner.js handles execution
+    const runCampaign = async (campaignId) => {
+      // 1. Get campaign config and target subreddits
+      // 2. Pair available Reddit accounts with subreddits
+      // 3. Post content via api/_lib/redditPoster.js
+      // 4. Record attempt status in campaign_run_attempts
+    };
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
+You're now ready to use SubPirate Pro effectively. Here are some things to explore:
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card
+    title="Environment setup"
+    icon="gear"
+    href="/environment-setup"
+  >
+    Learn about all available configuration options
+  </Card>
+  <Card
+    title="API reference"
+    icon="code"
+    href="/api/overview"
+  >
+    Explore the complete API documentation
+  </Card>
+  <Card
+    title="Supabase setup"
+    icon="database"
+    href="/deployment/supabase"
+  >
+    Configure your Supabase project for production
+  </Card>
+  <Card
+    title="Deployment"
+    icon="rocket"
+    href="/deployment/vercel"
+  >
+    Deploy SubPirate Pro to production
+  </Card>
 </CardGroup>
 
+## Tips for success
+
+### Analyzing subreddits effectively
+
+- Start with larger, well-established subreddits to understand their dynamics
+- Compare similar subreddits to identify the best targets
+- Refresh analyses periodically as communities evolve
+
+### Managing Reddit accounts
+
+- Connect multiple accounts to increase posting capacity
+- Distribute posts across accounts to avoid rate limits
+- Monitor account health and connection status regularly
+
+### Campaign best practices
+
+- Test content variations to optimize performance
+- Start with manual runs to verify everything works
+- Monitor campaign runs for failed attempts and adjust
+- Respect subreddit rules and Reddit's self-promotion guidelines
+
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  SubPirate Pro is designed for legitimate marketing analysis and outreach. Always follow Reddit's content policy and individual subreddit rules when posting.
 </Note>
+
+## Troubleshooting
+
+### Analysis fails or times out
+
+- Check that `OPENROUTER_API_KEY` is set correctly
+- Verify your OpenRouter account has sufficient credits
+- Check browser console for Web Worker errors
+- Clear IndexedDB cache if seeing stale data
+
+### Reddit OAuth not working
+
+- Verify `VITE_REDDIT_APP_ID` matches your Reddit app
+- Check redirect URIs are configured correctly in Reddit app settings
+- Ensure `REDDIT_CLIENT_SECRET` is set on the server
+- Verify `TOKEN_ENCRYPTION_KEY` is a valid base64-encoded 32-byte key
+
+### Campaigns not running
+
+- Confirm `CAMPAIGN_SCHEDULER_ENABLED=true` in environment
+- Check that cron job is configured and calling the endpoint
+- Verify `CRON_SECRET` matches between environment and cron caller
+- Review campaign_run_attempts table for error details
+
+<Card
+  title="Need more help?"
+  icon="question"
+  href="/deployment/local-development"
+>
+  Visit the deployment and troubleshooting guides
+</Card>

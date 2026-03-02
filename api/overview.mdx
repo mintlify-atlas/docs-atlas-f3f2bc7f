@@ -1,0 +1,230 @@
+---
+title: 'API Overview'
+description: 'Core concepts, base URLs, and response format for the SubPirate Pro API'
+---
+
+## Base URLs
+
+The SubPirate Pro API is available at different endpoints depending on your environment:
+
+<ParamField path="Local Development" type="string">
+  ```
+  http://localhost:8787
+  ```
+  When running `npm run dev:all`, the API server runs on port 8787. The Vite dev server on port 5173 automatically proxies `/api/*` requests to this server.
+</ParamField>
+
+<ParamField path="Production" type="string">
+  ```
+  https://your-production-domain.com
+  ```
+  In production, the API is served from the same origin as the frontend application.
+</ParamField>
+
+## Response Format
+
+All API responses use JSON format with consistent patterns:
+
+### Success Response
+
+```json
+{
+  "ok": true,
+  "data": {
+    // Response data here
+  }
+}
+```
+
+or for list endpoints:
+
+```json
+{
+  "items": [
+    // Array of items
+  ],
+  "next_cursor": "optional_pagination_token"
+}
+```
+
+### Error Response
+
+```json
+{
+  "error": "Error message describing what went wrong",
+  "details": "Optional additional context"
+}
+```
+
+<ResponseField name="error" type="string" required>
+  Human-readable error message
+</ResponseField>
+
+<ResponseField name="details" type="string">
+  Additional error context when available
+</ResponseField>
+
+## Common Error Codes
+
+The API uses standard HTTP status codes:
+
+<ResponseField name="200" type="OK">
+  Request succeeded
+</ResponseField>
+
+<ResponseField name="400" type="Bad Request">
+  Invalid request parameters or malformed JSON
+  ```json
+  {
+    "error": "tier+interval or priceId is required"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="401" type="Unauthorized">
+  Missing or invalid authentication token
+  ```json
+  {
+    "error": "Missing Authorization bearer token"
+  }
+  ```
+  or
+  ```json
+  {
+    "error": "Invalid or expired token"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="403" type="Forbidden">
+  Valid authentication but insufficient permissions, or origin not allowed
+  ```json
+  {
+    "error": "Origin not allowed"
+  }
+  ```
+  or
+  ```json
+  {
+    "error": "Admin access required"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="404" type="Not Found">
+  Requested resource does not exist
+</ResponseField>
+
+<ResponseField name="409" type="Conflict">
+  Resource conflict (e.g., subscription already exists)
+  ```json
+  {
+    "error": "subscription_already_exists",
+    "action": "open_billing_portal"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  Server-side error occurred
+  ```json
+  {
+    "error": "Supabase server auth is not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY."
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="502" type="Bad Gateway">
+  Upstream service (Reddit, OpenRouter) returned an error
+  ```json
+  {
+    "error": "Failed to contact Reddit"
+  }
+  ```
+</ResponseField>
+
+## Rate Limiting
+
+All `/api/*` endpoints are rate-limited to prevent abuse:
+
+<ParamField path="Window" type="string">
+  15 minutes
+</ParamField>
+
+<ParamField path="Max Requests" type="number">
+  300 requests per window
+</ParamField>
+
+Rate limit information is included in response headers:
+
+```bash
+RateLimit-Limit: 300
+RateLimit-Remaining: 299
+RateLimit-Reset: 1234567890
+```
+
+When you exceed the rate limit, you'll receive a `429 Too Many Requests` response.
+
+## CORS
+
+The API implements CORS (Cross-Origin Resource Sharing) to allow browser-based clients:
+
+- **Allowed Origins**: Configurable via `CORS_ORIGINS` environment variable (comma-separated)
+- **Default (Development)**: `http://localhost:5173,http://127.0.0.1:5173`
+- **Allowed Methods**: `GET, POST, PUT, PATCH, DELETE, OPTIONS`
+- **Allowed Headers**: `Content-Type, Authorization`
+
+In development mode without explicit `CORS_ORIGINS`, any local network origin is automatically allowed (localhost, 127.0.0.1, private IP ranges).
+
+## Health Check
+
+Check API availability with the health endpoint:
+
+```bash
+curl http://localhost:8787/health
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-03-02T10:30:00.000Z"
+}
+```
+
+<ResponseField name="status" type="string">
+  Always returns `"ok"` if the server is running
+</ResponseField>
+
+<ResponseField name="timestamp" type="string">
+  ISO 8601 timestamp of the response
+</ResponseField>
+
+## Example Request
+
+Here's a complete example of making an authenticated API request:
+
+```bash
+curl -X GET \
+  http://localhost:8787/api/subscription \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+**Response:**
+```json
+{
+  "tier": "pro",
+  "status": "active",
+  "isActive": true,
+  "plan": {
+    "name": "Pro Plan",
+    "limits": {
+      "analyses_per_month": 100,
+      "reddit_accounts": 5,
+      "campaigns": 10,
+      "projects": 20
+    }
+  }
+}
+```

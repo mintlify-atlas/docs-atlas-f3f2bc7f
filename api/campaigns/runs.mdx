@@ -1,0 +1,554 @@
+---
+title: 'Campaign Runs'
+description: 'Execute campaigns and monitor posting attempts'
+---
+
+## Campaign Run Workflow
+
+A **campaign run** represents a single execution of a campaign, which creates multiple **posting attempts**. The workflow is:
+
+1. **Queue a run** via manual trigger or scheduled dispatch
+2. **Build attempt plan** by pairing accounts × subreddits × content
+3. **Execute attempts** sequentially, posting to Reddit
+4. **Track status** of each attempt (posted, failed, skipped)
+5. **Calculate shortfall** if daily target not met
+
+### Run Status Lifecycle
+
+- **`queued`**: Run is scheduled, waiting to execute
+- **`running`**: Run is actively posting
+- **`completed`**: All attempts succeeded
+- **`partial`**: Some attempts succeeded, some failed/skipped
+- **`failed`**: All attempts failed
+- **`canceled`**: Run was canceled (e.g., subscription lapsed)
+
+---
+
+## GET /api/campaigns/:id/runs
+
+List all runs for a campaign, paginated. Requires **Viewer** role.
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Campaign UUID
+</ParamField>
+
+### Query Parameters
+
+<ParamField query="cursor" type="string">
+  Pagination cursor from previous response's `next_cursor`
+</ParamField>
+
+<ParamField query="limit" type="number" default="20">
+  Number of runs per page (max 50)
+</ParamField>
+
+### Response
+
+<ResponseField name="items" type="array" required>
+  Array of campaign run objects
+  
+  <Expandable title="Campaign Run Object">
+    <ResponseField name="id" type="string" required>
+      Run UUID
+    </ResponseField>
+    
+    <ResponseField name="campaign_id" type="string" required>
+      Campaign UUID
+    </ResponseField>
+    
+    <ResponseField name="run_type" type="string" required>
+      Run trigger type: `manual`, `scheduled`, or `retry`
+    </ResponseField>
+    
+    <ResponseField name="status" type="string" required>
+      Run status: `queued`, `running`, `completed`, `partial`, `failed`, `canceled`
+    </ResponseField>
+    
+    <ResponseField name="run_date" type="string" required>
+      Date (YYYY-MM-DD) in campaign's timezone
+    </ResponseField>
+    
+    <ResponseField name="scheduled_for" type="string">
+      ISO 8601 timestamp when run should execute
+    </ResponseField>
+    
+    <ResponseField name="attempt_target" type="number" required>
+      Total attempts planned for this run
+    </ResponseField>
+    
+    <ResponseField name="attempt_executed" type="number" required>
+      Number of attempts executed (posted + failed)
+    </ResponseField>
+    
+    <ResponseField name="attempt_failed" type="number" required>
+      Number of attempts that failed
+    </ResponseField>
+    
+    <ResponseField name="attempt_skipped" type="number" required>
+      Number of attempts skipped (rate limits, deduplication, etc.)
+    </ResponseField>
+    
+    <ResponseField name="shortfall" type="number" required>
+      Unmet daily target (target - successfully posted)
+    </ResponseField>
+    
+    <ResponseField name="triggered_by" type="string">
+      User UUID who triggered manual run (null for scheduled)
+    </ResponseField>
+    
+    <ResponseField name="config_snapshot" type="object">
+      Campaign configuration at run time (content, accounts, subreddits)
+    </ResponseField>
+    
+    <ResponseField name="started_at" type="string">
+      ISO 8601 timestamp when run started executing
+    </ResponseField>
+    
+    <ResponseField name="ended_at" type="string">
+      ISO 8601 timestamp when run finished
+    </ResponseField>
+    
+    <ResponseField name="created_at" type="string" required>
+      ISO 8601 timestamp of creation
+    </ResponseField>
+    
+    <ResponseField name="updated_at" type="string" required>
+      ISO 8601 timestamp of last update
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="next_cursor" type="string">
+  Pagination cursor for next page (null if no more results)
+</ResponseField>
+
+### Example Request
+
+```typescript
+import { fetchCampaignRuns } from './campaignApi';
+
+const { items: runs, next_cursor } = await fetchCampaignRuns(campaignId);
+
+console.log(`Loaded ${runs.length} runs`);
+runs.forEach(run => {
+  console.log(`Run ${run.id}: ${run.status} - ${run.attempt_executed}/${run.attempt_target} attempts`);
+});
+```
+
+```bash
+curl -X GET "https://your-api.example.com/api/campaigns/abc-123/runs?limit=10" \
+  -H "Authorization: Bearer YOUR_SUPABASE_JWT"
+```
+
+---
+
+## POST /api/campaigns/:id/run
+
+Trigger a manual campaign run. Requires **Editor** role and an active subscription.
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Campaign UUID
+</ParamField>
+
+### Request Body
+
+No body required. The run is generated based on current campaign configuration.
+
+### Response
+
+<ResponseField name="run" type="object" required>
+  The created campaign run object (see GET schema)
+</ResponseField>
+
+<ResponseField name="queued_after_existing_run" type="boolean">
+  If true, this run was queued behind an in-flight run
+</ResponseField>
+
+<ResponseField name="attempts_count" type="number">
+  Number of posting attempts created for this run
+</ResponseField>
+
+### Errors
+
+- **403**: Subscription required, or insufficient campaign role
+- **409**: No posts are due right now (daily target already met)
+- **422**: Campaign is not ready to run (missing content, accounts, or subreddits)
+
+### Example Request
+
+```typescript
+import { triggerCampaignRun } from './campaignApi';
+
+try {
+  const result = await triggerCampaignRun(campaignId);
+  console.log('Run queued:', result.run.id);
+  console.log('Attempts:', result.attempts_count);
+  
+  if (result.queued_after_existing_run) {
+    console.log('⚠️ Run will wait for current run to finish');
+  }
+} catch (error) {
+  if (error.message.includes('subscription_required')) {
+    console.error('Upgrade required to run campaigns');
+  } else if (error.message.includes('nothing_due')) {
+    console.log('Daily target already met');
+  } else {
+    console.error('Failed to trigger run:', error.message);
+  }
+}
+```
+
+```bash
+curl -X POST https://your-api.example.com/api/campaigns/abc-123/run \
+  -H "Authorization: Bearer YOUR_SUPABASE_JWT" \
+  -H "Content-Type: application/json"
+```
+
+### Response Example
+
+```json
+{
+  "run": {
+    "id": "run-uuid-here",
+    "campaign_id": "abc-123",
+    "run_type": "manual",
+    "status": "queued",
+    "run_date": "2026-03-02",
+    "attempt_target": 10,
+    "attempt_executed": 0,
+    "attempt_failed": 0,
+    "attempt_skipped": 0,
+    "shortfall": 10,
+    "scheduled_for": "2026-03-02T18:30:00Z",
+    "triggered_by": "user-uuid",
+    "created_at": "2026-03-02T18:30:00Z"
+  },
+  "queued_after_existing_run": false,
+  "attempts_count": 10
+}
+```
+
+---
+
+## GET /api/campaigns/:id/runs/:runId
+
+Get detailed information about a specific run, including all posting attempts. Requires **Viewer** role.
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Campaign UUID
+</ParamField>
+
+<ParamField path="runId" type="string" required>
+  Run UUID
+</ParamField>
+
+### Response
+
+<ResponseField name="run" type="object" required>
+  Campaign run object (see GET /api/campaigns/:id/runs schema)
+</ResponseField>
+
+<ResponseField name="attempts" type="array" required>
+  Array of posting attempt objects
+  
+  <Expandable title="Posting Attempt Object">
+    <ResponseField name="id" type="string" required>
+      Attempt UUID
+    </ResponseField>
+    
+    <ResponseField name="run_id" type="string" required>
+      Parent run UUID
+    </ResponseField>
+    
+    <ResponseField name="campaign_id" type="string" required>
+      Campaign UUID
+    </ResponseField>
+    
+    <ResponseField name="reddit_account_id" type="string" required>
+      Reddit account used for posting
+    </ResponseField>
+    
+    <ResponseField name="subreddit_id" type="string" required>
+      Target subreddit UUID
+    </ResponseField>
+    
+    <ResponseField name="content_version_id" type="string" required>
+      Content version used for this post
+    </ResponseField>
+    
+    <ResponseField name="media_asset_id" type="string">
+      Media asset UUID (for image/video posts)
+    </ResponseField>
+    
+    <ResponseField name="attempt_index" type="number" required>
+      0-based index of this attempt within the run
+    </ResponseField>
+    
+    <ResponseField name="status" type="string" required>
+      Attempt status: `planned`, `in_flight`, `posted`, `failed`, `skipped`, `deduped`
+    </ResponseField>
+    
+    <ResponseField name="retry_count" type="number" required>
+      Number of retry attempts made (max 2)
+    </ResponseField>
+    
+    <ResponseField name="http_status" type="number">
+      HTTP status code from Reddit API
+    </ResponseField>
+    
+    <ResponseField name="reddit_post_id" type="string">
+      Reddit post fullname (e.g., `t3_abc123`) if successfully posted
+    </ResponseField>
+    
+    <ResponseField name="error_code" type="string">
+      Error code if failed: `AUTH_FAILURE`, `RATE_LIMITED`, `ACCOUNT_COOLDOWN`, `DEDUPED_24H`, etc.
+    </ResponseField>
+    
+    <ResponseField name="error_message" type="string">
+      Human-readable error description
+    </ResponseField>
+    
+    <ResponseField name="dedupe_hash" type="string" required>
+      Hash for deduplication (prevents identical posts within 24h)
+    </ResponseField>
+    
+    <ResponseField name="idempotency_key" type="string" required>
+      Unique key for this attempt to prevent double-posting
+    </ResponseField>
+    
+    <ResponseField name="started_at" type="string">
+      ISO 8601 timestamp when attempt started
+    </ResponseField>
+    
+    <ResponseField name="ended_at" type="string">
+      ISO 8601 timestamp when attempt finished
+    </ResponseField>
+    
+    <ResponseField name="reddit_accounts" type="object">
+      Joined Reddit account details
+      <Expandable>
+        <ResponseField name="username" type="string">
+          Reddit username
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="subreddits" type="object">
+      Joined subreddit details
+      <Expandable>
+        <ResponseField name="name" type="string">
+          Subreddit name (without r/ prefix)
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="campaign_content_versions" type="object">
+      Joined content version details
+      <Expandable>
+        <ResponseField name="version" type="number">
+          Content version number
+        </ResponseField>
+        <ResponseField name="post_type" type="string">
+          Post type: `self`, `link`, `image`, `video`
+        </ResponseField>
+        <ResponseField name="title" type="string">
+          Post title
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="media_assets" type="object">
+      Joined media asset details (if applicable)
+      <Expandable>
+        <ResponseField name="file_name" type="string">
+          Original file name
+        </ResponseField>
+        <ResponseField name="mime_type" type="string">
+          MIME type (e.g., `image/png`)
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Request
+
+```typescript
+import { fetchCampaignRun } from './campaignApi';
+
+const { run, attempts } = await fetchCampaignRun(campaignId, runId);
+
+console.log(`Run ${run.id} - Status: ${run.status}`);
+console.log(`Attempts: ${attempts.length}`);
+
+const posted = attempts.filter(a => a.status === 'posted');
+const failed = attempts.filter(a => a.status === 'failed');
+const skipped = attempts.filter(a => a.status === 'skipped' || a.status === 'deduped');
+
+console.log(`✅ Posted: ${posted.length}`);
+console.log(`❌ Failed: ${failed.length}`);
+console.log(`⏭️ Skipped: ${skipped.length}`);
+
+attempts.forEach(attempt => {
+  const username = attempt.reddit_accounts?.username;
+  const subreddit = attempt.subreddits?.name;
+  console.log(`  ${attempt.status}: u/${username} → r/${subreddit}`);
+  
+  if (attempt.status === 'posted') {
+    console.log(`    🔗 https://reddit.com/comments/${attempt.reddit_post_id}`);
+  } else if (attempt.error_message) {
+    console.log(`    Error: ${attempt.error_message}`);
+  }
+});
+```
+
+```bash
+curl -X GET "https://your-api.example.com/api/campaigns/abc-123/runs/run-uuid" \
+  -H "Authorization: Bearer YOUR_SUPABASE_JWT"
+```
+
+---
+
+## POST /api/campaigns/:id/run/preview
+
+Preview what a campaign run would do without actually executing it. Requires **Editor** role.
+
+Useful for:
+- Validating campaign configuration before running
+- Checking daily progress and remaining posts
+- Debugging account health and subreddit availability
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Campaign UUID
+</ParamField>
+
+### Response
+
+<ResponseField name="preview" type="object" required>
+  <Expandable>
+    <ResponseField name="campaign_id" type="string">
+      Campaign UUID
+    </ResponseField>
+    
+    <ResponseField name="run_date" type="string">
+      Date (YYYY-MM-DD) in campaign's timezone
+    </ResponseField>
+    
+    <ResponseField name="timezone" type="string">
+      Campaign's IANA timezone
+    </ResponseField>
+    
+    <ResponseField name="attempt_target" type="number">
+      Number of attempts that would be created
+    </ResponseField>
+    
+    <ResponseField name="executed_today" type="number">
+      Attempts already executed today
+    </ResponseField>
+    
+    <ResponseField name="posted_today" type="number">
+      Successful posts already made today
+    </ResponseField>
+    
+    <ResponseField name="carry_over" type="number">
+      Shortfall carried over from previous day
+    </ResponseField>
+    
+    <ResponseField name="remaining_today" type="number">
+      Posts remaining to meet daily target
+    </ResponseField>
+    
+    <ResponseField name="pair_count" type="number">
+      Number of active account × subreddit pairings
+    </ResponseField>
+    
+    <ResponseField name="warnings" type="array">
+      Warning messages (e.g., missing content, no pairings)
+    </ResponseField>
+    
+    <ResponseField name="skips" type="array">
+      Reasons why run cannot execute (same as warnings)
+    </ResponseField>
+    
+    <ResponseField name="attempts" type="array">
+      Array of planned attempts (see POST /api/campaigns/:id/run response)
+    </ResponseField>
+    
+    <ResponseField name="active_content" type="object">
+      Content version that would be used
+      <Expandable>
+        <ResponseField name="id" type="string">
+          Content version UUID
+        </ResponseField>
+        <ResponseField name="version" type="number">
+          Version number
+        </ResponseField>
+        <ResponseField name="post_type" type="string">
+          `self`, `link`, `image`, or `video`
+        </ResponseField>
+        <ResponseField name="title" type="string">
+          Post title
+        </ResponseField>
+        <ResponseField name="body" type="string">
+          Post body (for self posts)
+        </ResponseField>
+        <ResponseField name="link_url" type="string">
+          Link URL (for link posts)
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Request
+
+```typescript
+import { fetchCampaignRunPreview } from './campaignApi';
+
+try {
+  const preview = await fetchCampaignRunPreview(campaignId);
+  
+  console.log(`📅 Run Date: ${preview.run_date} (${preview.timezone})`);
+  console.log(`🎯 Target: ${preview.attempt_target} attempts`);
+  console.log(`✅ Posted Today: ${preview.posted_today}`);
+  console.log(`⏳ Remaining: ${preview.remaining_today}`);
+  
+  if (preview.carry_over > 0) {
+    console.log(`📦 Carry-Over: ${preview.carry_over} from previous day`);
+  }
+  
+  if (preview.warnings.length > 0) {
+    console.warn('⚠️ Warnings:');
+    preview.warnings.forEach(w => console.warn(`  - ${w}`));
+  }
+  
+  if (preview.active_content) {
+    console.log('📝 Content:', preview.active_content.title);
+  }
+  
+  console.log(`🔄 Pairings: ${preview.pair_count} account × subreddit combos`);
+  console.log(`📊 Attempts: ${preview.attempts.length} planned`);
+} catch (error) {
+  console.error('Preview failed:', error.message);
+}
+```
+
+```bash
+curl -X POST https://your-api.example.com/api/campaigns/abc-123/run/preview \
+  -H "Authorization: Bearer YOUR_SUPABASE_JWT" \
+  -H "Content-Type: application/json"
+```
+
+---
+
+## Campaign Run Event Log
+
+Each run maintains a detailed event log for debugging and auditing. See [Campaign Events](/api/campaigns/events) for the events API.

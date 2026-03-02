@@ -1,0 +1,433 @@
+---
+title: GDPR Compliance
+description: Data protection, user rights, and GDPR compliance features in SubPirate
+---
+
+## Overview
+
+SubPirate is committed to protecting the personal data of all users, including those in the European Union and European Economic Area (EU/EEA). This documentation describes our GDPR compliance features and how we enable users to exercise their data rights.
+
+<Info>
+  For the full legal text of our GDPR compliance statement, see the [GDPR Compliance page](https://subpirate.com/gdpr-compliance) on our marketing site.
+</Info>
+
+## Legal Basis for Processing
+
+Under GDPR Article 6, we process personal data on these legal bases:
+
+| Legal Basis | Purpose | Example |
+|------------|---------|----------|
+| **Contractual Necessity** (6(1)(b)) | Service delivery | Account management, Reddit integration, campaign execution |
+| **Consent** (6(1)(a)) | Optional features | Connecting additional Reddit accounts, marketing emails |
+| **Legitimate Interests** (6(1)(f)) | Service improvement | Aggregate analytics, fraud prevention, security monitoring |
+| **Legal Obligation** (6(1)(c)) | Compliance | Financial record retention, lawful data access requests |
+
+## Data We Process
+
+Categories of personal data for EU/EEA residents:
+
+### Identity Data
+- Email address (from Supabase Auth)
+- Display name (optional, user-provided)
+- User ID (UUID)
+
+### Reddit Integration Data
+- Reddit username
+- Reddit user ID
+- OAuth tokens (encrypted with AES-256-GCM)
+- Karma scores
+- Avatar URL
+
+### Usage Data
+- Subreddit analyses performed
+- Projects created
+- Campaigns configured
+- Reddit posts made through SubPirate
+
+### Technical Data
+- IP address (from server logs)
+- Browser type and version
+- Request timestamps
+- Error logs
+
+### Financial Data
+- Billing details (processed by Stripe, not stored directly)
+- Subscription status
+
+<Warning>
+  **Payment data**: We never store full credit card numbers. Stripe tokenizes all payment methods, and we only store Stripe customer IDs and subscription metadata.
+</Warning>
+
+## User Rights Under GDPR
+
+SubPirate provides mechanisms to exercise all GDPR rights:
+
+### Right of Access (Article 15)
+
+Users can request a copy of all personal data we hold about them.
+
+**Implementation**: Email request to `privacy@subpirate.com`
+
+**Response format**: JSON export including:
+- Profile data
+- Reddit accounts
+- Projects and campaigns
+- Subreddit analyses
+- Usage history
+
+**Timeline**: 30 days (extendable to 90 for complex requests)
+
+### Right to Rectification (Article 16)
+
+Users can correct inaccurate personal data.
+
+**Implementation**: Self-service via account settings or email request
+
+```typescript
+// Users can update their profile directly
+await supabase
+  .from('profiles')
+  .update({ display_name: 'New Name' })
+  .eq('id', user.id);
+```
+
+### Right to Erasure (Article 17)
+
+Users can request deletion of their personal data.
+
+**Implementation**: Account deletion feature (planned) or email request
+
+**What gets deleted:**
+- User profile
+- Reddit account connections (tokens purged immediately)
+- Projects and campaigns owned by the user
+- Cached subreddit analyses
+- Usage history
+
+**Exceptions** (legal retention):
+- Financial records (tax compliance, 7 years)
+- Fraud prevention logs (legitimate interest, 1 year)
+
+<Info>
+  **Cascade deletion**: All user data is linked via foreign keys with `ON DELETE CASCADE`, ensuring complete removal when a user is deleted from `auth.users`.
+</Info>
+
+### Right to Data Portability (Article 20)
+
+Users can request their data in a machine-readable format.
+
+**Implementation**: JSON export via email request
+
+**Export includes:**
+```json
+{
+  "profile": {
+    "id": "uuid",
+    "email": "user@example.com",
+    "display_name": "User Name",
+    "created_at": "2026-01-01T00:00:00Z"
+  },
+  "reddit_accounts": [
+    {
+      "username": "reddit_user",
+      "karma_score": 1234,
+      "connected_at": "2026-01-15T00:00:00Z"
+    }
+  ],
+  "projects": [...],
+  "campaigns": [...]
+}
+```
+
+### Right to Object (Article 21)
+
+Users can object to processing based on legitimate interests.
+
+**Implementation**: Email request to `privacy@subpirate.com`
+
+**Examples:**
+- Opt out of analytics tracking
+- Restrict security logging (evaluated case-by-case)
+
+### Right to Restrict Processing (Article 18)
+
+Users can request temporary restriction while disputes are resolved.
+
+**Implementation**: Account suspension (manual process)
+
+### Right to Withdraw Consent
+
+Where processing is based on consent, users can withdraw anytime.
+
+**Implementation:**
+- Disconnect Reddit accounts: Self-service in app
+- Unsubscribe from marketing: Link in emails
+- Revoke OAuth: Reddit account settings
+
+## Data Isolation with Row-Level Security
+
+SubPirate uses **Postgres Row-Level Security (RLS)** to enforce strict data isolation at the database level.
+
+### RLS for User Data
+
+Every table has RLS policies ensuring users can only access their own data:
+
+```sql
+-- Profiles: Users can only read/update their own profile
+CREATE POLICY profiles_select_own
+ON public.profiles
+FOR SELECT
+TO authenticated
+USING (id = (SELECT auth.uid()));
+
+CREATE POLICY profiles_update_own
+ON public.profiles
+FOR UPDATE
+TO authenticated
+USING (id = (SELECT auth.uid()))
+WITH CHECK (id = (SELECT auth.uid()));
+```
+
+### RLS for Reddit Accounts
+
+```sql
+-- Users can only access their own Reddit accounts
+CREATE POLICY reddit_accounts_select_own
+ON public.reddit_accounts
+FOR SELECT
+TO authenticated
+USING (user_id = (SELECT auth.uid()));
+
+-- Users can only link Reddit accounts to themselves
+CREATE POLICY reddit_accounts_insert_own
+ON public.reddit_accounts
+FOR INSERT
+TO authenticated
+WITH CHECK (user_id = (SELECT auth.uid()));
+```
+
+From `supabase/migrations/20260222103000_reddit_oauth_hardening.sql`, users cannot link Reddit accounts they don't own to campaigns:
+
+```sql
+CREATE POLICY campaign_reddit_accounts_insert_editor
+ON public.campaign_reddit_accounts
+FOR INSERT
+TO authenticated
+WITH CHECK (
+  public.get_campaign_role(campaign_id) IN ('editor', 'admin')
+  AND EXISTS (
+    SELECT 1
+    FROM public.reddit_accounts ra
+    WHERE ra.id = campaign_reddit_accounts.reddit_account_id
+      AND ra.user_id = (SELECT auth.uid())
+  )
+);
+```
+
+### RLS for Projects and Campaigns
+
+**Projects**: Users can only access projects they own or are members of.
+
+```sql
+CREATE POLICY projects_select_own
+ON public.projects
+FOR SELECT
+TO authenticated
+USING (user_id = (SELECT auth.uid()));
+```
+
+**Campaigns**: Role-based access (owner, admin, editor, viewer) with RLS enforcement.
+
+<Info>
+  **Why RLS matters for GDPR**: Even if application code has a bug, RLS prevents data leakage at the database level. This provides defense-in-depth for data protection.
+</Info>
+
+## Atomic Operations with Advisory Locks
+
+To prevent race conditions in quota enforcement, we use **PostgreSQL advisory locks**:
+
+```sql
+-- From supabase/migrations/20260222103000_reddit_oauth_hardening.sql:36
+PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::text, 0));
+```
+
+This ensures that when a user connects a Reddit account, we atomically:
+1. Check current account count
+2. Verify against quota limit
+3. Insert new account record
+
+**GDPR relevance**: Prevents quota bypass attacks that could violate resource limits or fair use policies.
+
+## Sub-Processors and Data Transfers
+
+SubPirate uses sub-processors for specific services:
+
+| Sub-Processor | Purpose | Data Location | GDPR Compliance |
+|---------------|---------|---------------|------------------|
+| **Supabase** | Database and auth | US (AWS) | Standard Contractual Clauses (SCCs) |
+| **Stripe** | Payment processing | US | GDPR-compliant DPA |
+| **Vercel** | Application hosting | Global CDN | SCCs for EU data |
+| **OpenRouter** | AI analysis | US | Public data only (no PII) |
+
+<Warning>
+  **International transfers**: Data of EU/EEA residents is transferred to the US. We rely on Standard Contractual Clauses (SCCs) as approved by the European Commission for adequate safeguards.
+</Warning>
+
+## Data Retention
+
+| Data Type | Retention Period | Reason |
+|-----------|------------------|--------|
+| **Active user data** | Until account deletion | Contractual necessity |
+| **Deleted user data** | Immediate purge (7 days for backups) | Right to erasure |
+| **Financial records** | 7 years | Legal obligation (tax law) |
+| **Security logs** | 1 year | Legitimate interest (fraud prevention) |
+| **Encrypted tokens** | Until Reddit account disconnected | Contractual necessity |
+
+## Data Protection Measures
+
+We implement technical and organizational measures per GDPR Article 32:
+
+### Technical Measures
+
+- **AES-256-GCM encryption** for Reddit tokens at rest
+- **TLS 1.3** for all data in transit
+- **PKCE-based authentication** to prevent code interception
+- **Row-Level Security (RLS)** for database-level isolation
+- **Bcrypt password hashing** (managed by Supabase Auth)
+- **Advisory locks** to prevent race conditions
+
+### Organizational Measures
+
+- **Principle of least privilege**: Service role keys used only where necessary
+- **Regular security reviews**: Dependency updates and vulnerability scans
+- **Access logging**: Audit trail for sensitive operations
+- **Incident response plan**: 72-hour breach notification procedure
+- **Staff training**: GDPR awareness for all team members
+
+## Breach Notification
+
+In the event of a personal data breach:
+
+### Timeline
+
+- **72 hours**: Notify relevant supervisory authority (GDPR Article 33)
+- **Without undue delay**: Notify affected individuals if high risk (Article 34)
+
+### Process
+
+1. **Detection**: Automated monitoring alerts security team
+2. **Assessment**: Determine scope, affected users, risk level
+3. **Containment**: Immediate actions to stop breach
+4. **Notification**: Email to affected users with clear guidance
+5. **Documentation**: Detailed incident report for regulators
+6. **Remediation**: Fix vulnerability, rotate keys, improve controls
+
+### User Communication
+
+Breach notifications to users will include:
+- Nature of the breach
+- Likely consequences
+- Measures taken to mitigate
+- Recommended actions for users
+- Contact point for questions
+
+## Exercising Your Rights
+
+To exercise any GDPR rights:
+
+### Contact Methods
+
+- **Privacy inquiries**: privacy@subpirate.com
+- **General contact**: hello@subpirate.com
+
+### What to Include
+
+- Your email address (for identity verification)
+- Specific right you're exercising (access, deletion, etc.)
+- Any relevant details (e.g., which data to export)
+
+### Response Timeline
+
+- **Standard**: 30 days
+- **Complex requests**: Up to 90 days (we'll notify you within 30 days)
+
+### Identity Verification
+
+We verify your identity before processing requests to prevent unauthorized access:
+- Email confirmation link
+- Additional verification questions if needed
+- Multi-factor authentication if enabled on your account
+
+<Warning>
+  **Fraudulent requests**: Attempting to access another user's data is a violation of GDPR Article 83 and may result in legal action.
+</Warning>
+
+## Supervisory Authority
+
+If unsatisfied with our response, you have the right to lodge a complaint with your local data protection authority:
+
+- **EU**: [EDPB list of supervisory authorities](https://edpb.europa.eu/about-edpb/about-edpb/members_en)
+- **UK**: Information Commissioner's Office (ICO)
+- **Your country**: Contact your national DPA
+
+## Developer Guidelines
+
+### Implementing GDPR Features
+
+When adding features that process personal data:
+
+1. **Data minimization**: Only collect necessary data
+2. **Purpose limitation**: Document why each field is needed
+3. **RLS policies**: Add appropriate row-level security
+4. **Cascade deletion**: Use `ON DELETE CASCADE` for user-owned data
+5. **Audit logging**: Log access to sensitive data (without logging values)
+6. **Encryption**: Encrypt credentials at rest
+
+### Testing GDPR Compliance
+
+```typescript
+// Test: User can only access their own data
+test('RLS prevents cross-user access', async () => {
+  const user1 = await createTestUser();
+  const user2 = await createTestUser();
+  
+  const project = await createProject(user1);
+  
+  // User2 should not see user1's project
+  const { data, error } = await supabaseAs(user2)
+    .from('projects')
+    .select('*')
+    .eq('id', project.id);
+  
+  expect(data).toHaveLength(0);
+});
+```
+
+### Data Export Implementation
+
+```typescript
+// Conceptual data export function
+async function exportUserData(userId: string) {
+  const [profile, redditAccounts, projects, campaigns] = await Promise.all([
+    supabase.from('profiles').select('*').eq('id', userId).single(),
+    supabase.from('reddit_accounts').select('id, username, karma_score').eq('user_id', userId),
+    supabase.from('projects').select('*').eq('user_id', userId),
+    supabase.from('campaigns').select('*').eq('user_id', userId),
+  ]);
+  
+  return {
+    profile: profile.data,
+    reddit_accounts: redditAccounts.data,
+    projects: projects.data,
+    campaigns: campaigns.data,
+    exported_at: new Date().toISOString(),
+  };
+}
+```
+
+## Related Documentation
+
+- [Authentication](/security/authentication) - User auth and session management
+- [Data Encryption](/security/data-encryption) - Token encryption details
+- [Privacy Policy](https://subpirate.com/privacy) - Full privacy policy
+- [GDPR Compliance Legal](https://subpirate.com/gdpr-compliance) - Legal compliance statement

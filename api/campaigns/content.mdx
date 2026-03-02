@@ -1,0 +1,310 @@
+---
+title: 'Campaign Content'
+description: 'Manage post content versions for campaigns'
+---
+
+## Content Versioning
+
+Campaigns use **content versions** to define what gets posted. Each version includes:
+
+- **Post type**: Text post (self), link, image, or video
+- **Title**: Required for all post types
+- **Body**: Optional text content (for self posts)
+- **Link URL**: Required for link posts
+- **Media rotation**: How to cycle through attached media
+
+Only one content version is **active** at a time. Creating a new version automatically deactivates previous ones.
+
+---
+
+## GET /api/campaigns/:id/content
+
+List all content versions for a campaign. Requires **Viewer** role.
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Campaign UUID
+</ParamField>
+
+### Response
+
+<ResponseField name="items" type="array" required>
+  Array of content version objects, ordered by version number (newest first)
+  
+  <Expandable title="Content Version Object">
+    <ResponseField name="id" type="string" required>
+      Content version UUID
+    </ResponseField>
+    
+    <ResponseField name="campaign_id" type="string" required>
+      Parent campaign UUID
+    </ResponseField>
+    
+    <ResponseField name="version" type="number" required>
+      Version number (auto-incremented, starts at 1)
+    </ResponseField>
+    
+    <ResponseField name="post_type" type="string" required>
+      Post type: `self`, `link`, `image`, or `video`
+    </ResponseField>
+    
+    <ResponseField name="title" type="string" required>
+      Post title (max 300 characters)
+    </ResponseField>
+    
+    <ResponseField name="body" type="string">
+      Post body text (for self posts)
+    </ResponseField>
+    
+    <ResponseField name="link_url" type="string">
+      Link URL (required for `link` post type)
+    </ResponseField>
+    
+    <ResponseField name="media_rotation_mode" type="string" required>
+      Media rotation strategy: `sequential` (currently only option)
+    </ResponseField>
+    
+    <ResponseField name="is_active" type="boolean" required>
+      Whether this version is currently active (only one can be active)
+    </ResponseField>
+    
+    <ResponseField name="created_by" type="string" required>
+      UUID of user who created this version
+    </ResponseField>
+    
+    <ResponseField name="created_at" type="string" required>
+      ISO 8601 timestamp of creation
+    </ResponseField>
+    
+    <ResponseField name="updated_at" type="string" required>
+      ISO 8601 timestamp of last update
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Request
+
+```typescript
+import { fetchCampaignContentVersions } from './campaignApi';
+
+const { items: versions } = await fetchCampaignContentVersions(campaignId);
+
+const activeVersion = versions.find(v => v.is_active);
+if (activeVersion) {
+  console.log('Active Content:');
+  console.log(`  Version: ${activeVersion.version}`);
+  console.log(`  Type: ${activeVersion.post_type}`);
+  console.log(`  Title: ${activeVersion.title}`);
+  
+  if (activeVersion.body) {
+    console.log(`  Body: ${activeVersion.body.slice(0, 100)}...`);
+  }
+  
+  if (activeVersion.link_url) {
+    console.log(`  URL: ${activeVersion.link_url}`);
+  }
+} else {
+  console.warn('⚠️ No active content version');
+}
+
+console.log(`Total versions: ${versions.length}`);
+```
+
+```bash
+curl -X GET "https://your-api.example.com/api/campaigns/abc-123/content" \
+  -H "Authorization: Bearer YOUR_SUPABASE_JWT"
+```
+
+---
+
+## POST /api/campaigns/:id/content
+
+Create a new content version for a campaign. Requires **Editor** role.
+
+The new version will automatically become active, and previous versions will be deactivated.
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Campaign UUID
+</ParamField>
+
+### Request Body
+
+<ParamField body="post_type" type="string" required>
+  Post type: `self`, `link`, `image`, or `video`
+</ParamField>
+
+<ParamField body="title" type="string" required>
+  Post title (max 300 characters, Reddit's limit)
+</ParamField>
+
+<ParamField body="body" type="string">
+  Post body text (for `self` posts). Can include Markdown formatting.
+</ParamField>
+
+<ParamField body="link_url" type="string">
+  Link URL (required for `link` post type). Must be a valid `http://` or `https://` URL.
+</ParamField>
+
+<ParamField body="media_rotation_mode" type="string" default="sequential">
+  Media rotation strategy. Currently only `sequential` is supported (cycles through attached media in order).
+</ParamField>
+
+### Response
+
+<ResponseField name="content" type="object" required>
+  The created content version object (see GET response schema)
+</ResponseField>
+
+### Validation Rules
+
+- **`post_type`** must be one of: `self`, `link`, `image`, `video`
+- **`title`** is always required (max 300 characters)
+- **`link_url`** is required for `link` post type
+- **`link_url`** must use `http://` or `https://` protocol
+- **`body`** is typically used for `self` posts (can be combined with `link` on some subreddits)
+
+### Example Requests
+
+#### Text Post (Self)
+
+```typescript
+import { createCampaignContentVersion } from './campaignApi';
+
+const { content } = await createCampaignContentVersion(campaignId, {
+  post_type: 'self',
+  title: 'How our startup increased conversion by 40%',
+  body: `We recently launched a new onboarding flow and saw amazing results:\n\n- 40% higher conversion\n- 25% better retention\n- Users complete setup 2x faster\n\nHappy to answer questions!`,
+});
+
+console.log('Content version created:', content.version);
+```
+
+#### Link Post
+
+```typescript
+const { content } = await createCampaignContentVersion(campaignId, {
+  post_type: 'link',
+  title: 'We built an open-source tool for Reddit marketing automation',
+  link_url: 'https://github.com/yourorg/yourproject',
+});
+```
+
+#### Image Post
+
+```typescript
+const { content } = await createCampaignContentVersion(campaignId, {
+  post_type: 'image',
+  title: 'Our new dashboard UI [Beta Preview]',
+  // Note: Actual image upload happens via campaign media API
+});
+```
+
+```bash
+# Text post example
+curl -X POST https://your-api.example.com/api/campaigns/abc-123/content \
+  -H "Authorization: Bearer YOUR_SUPABASE_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "post_type": "self",
+    "title": "How we grew our SaaS to $10k MRR in 6 months",
+    "body": "Here are the strategies that worked for us...\n\n1. Focus on SEO\n2. Build in public\n3. Engage with communities"
+  }'
+
+# Link post example
+curl -X POST https://your-api.example.com/api/campaigns/abc-123/content \
+  -H "Authorization: Bearer YOUR_SUPABASE_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "post_type": "link",
+    "title": "Launch: New open-source Reddit marketing tool",
+    "link_url": "https://github.com/yourorg/subpirate"
+  }'
+```
+
+### Response Example
+
+```json
+{
+  "content": {
+    "id": "content-uuid-here",
+    "campaign_id": "abc-123",
+    "version": 2,
+    "post_type": "self",
+    "title": "How we grew our SaaS to $10k MRR in 6 months",
+    "body": "Here are the strategies that worked for us...\n\n1. Focus on SEO\n2. Build in public\n3. Engage with communities",
+    "link_url": null,
+    "media_rotation_mode": "sequential",
+    "is_active": true,
+    "created_by": "user-uuid",
+    "created_at": "2026-03-02T18:45:00Z",
+    "updated_at": "2026-03-02T18:45:00Z"
+  }
+}
+```
+
+### Errors
+
+- **400**: Invalid `post_type`, missing required field, or invalid URL format
+- **403**: User does not have Editor role
+- **404**: Campaign not found
+
+---
+
+## Content Best Practices
+
+### Title Guidelines
+
+- **Be descriptive**: Clearly state the value or topic
+- **Avoid clickbait**: Reddit communities downvote obvious marketing
+- **Include brackets**: Tags like `[Tool]`, `[Guide]`, `[Beta]` can help
+- **Study top posts**: Check what titles perform well in your target subreddits
+
+### Body Content (Self Posts)
+
+- **Lead with value**: Don't bury the lede
+- **Use formatting**: Markdown (`**bold**`, `- lists`, `> quotes`) improves readability
+- **Engage authentically**: Ask questions, offer to help
+- **Disclose affiliation**: Be transparent about your connection to the product
+- **Keep it concise**: Long walls of text get skipped
+
+### Link Posts
+
+- **Link to valuable content**: Landing pages, blog posts, GitHub repos
+- **Avoid direct product links**: Reddit prefers educational content over sales pages
+- **Ensure mobile-friendly**: Many Redditors browse on mobile
+
+### Media Posts (Image/Video)
+
+- **Use high-quality visuals**: Blurry screenshots get downvoted
+- **Add context in title**: Explain what the image shows
+- **Follow subreddit rules**: Some communities restrict promotional images
+
+---
+
+## Testing Content
+
+Before running a campaign at scale:
+
+1. **Manual post test**: Post manually to verify format and community response
+2. **Use run preview**: Check what the post will look like (see [Campaign Runs](/api/campaigns/runs))
+3. **Start small**: Begin with `daily_post_target: 1` to test the waters
+4. **Monitor feedback**: Watch for downvotes or mod warnings
+
+---
+
+## Content Versioning Strategy
+
+Create new versions when:
+
+- **A/B testing titles**: Compare engagement across different titles
+- **Seasonal updates**: Refresh content for holidays or events
+- **Product changes**: Update links or descriptions for new features
+- **Performance decline**: If a post stops performing, try a fresh angle
+
+Versions are preserved for:
+- **Audit trail**: Track what was posted when
+- **Rollback capability**: Reactivate a previous version if needed
+- **Performance comparison**: Compare metrics across versions

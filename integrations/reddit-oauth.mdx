@@ -1,0 +1,261 @@
+---
+title: Reddit OAuth Integration
+description: Set up Reddit OAuth for connecting user accounts
+---
+
+## Overview
+
+SubPirate uses Reddit's OAuth 2.0 web app flow to securely connect user accounts. This allows users to analyze subreddits and run campaigns using their authenticated Reddit accounts.
+
+## Architecture
+
+The OAuth flow is split between browser and server:
+
+1. **Browser** initiates OAuth with Reddit's authorize endpoint
+2. Reddit redirects back to your callback URL with an authorization code
+3. **Server** exchanges the code for access and refresh tokens via `POST /api/reddit/oauth/exchange`
+4. Tokens are encrypted with AES-256-GCM and stored in the database
+
+The authorization code exchange happens server-side in `api/_lib/redditOAuthExchangeFlow.js`.
+
+<Warning>
+  Never expose Reddit client secrets or token encryption keys to the browser. These must remain server-only environment variables.
+</Warning>
+
+## Reddit App Registration
+
+<Steps>
+  <Step title="Create a Reddit App">
+    Go to [https://www.reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) and click "create another app..."
+  </Step>
+  
+  <Step title="Configure App Type">
+    Select **web app** as the application type. This is required for the authorization code flow.
+  </Step>
+  
+  <Step title="Set Redirect URIs">
+    Add your callback URLs:
+    
+    **Development:**
+    ```
+    http://localhost:5173/auth/reddit/callback
+    ```
+    
+    **Production:**
+    ```
+    https://your-domain.com/auth/reddit/callback
+    ```
+    
+    <Warning>
+      The redirect URI must **exactly** match what you configure in environment variables. Any mismatch will cause OAuth to fail.
+    </Warning>
+  </Step>
+  
+  <Step title="Copy Credentials">
+    After creating the app, copy:
+    - **Client ID** (appears under the app name)
+    - **Client Secret** (click "edit" to reveal)
+  </Step>
+</Steps>
+
+## Environment Variables
+
+### Client-Side (Public)
+
+These are bundled into the browser and must use the `VITE_` prefix:
+
+```env .env
+VITE_REDDIT_APP_ID=your_reddit_client_id
+VITE_REDDIT_REDIRECT_URI=http://localhost:5173/auth/reddit/callback
+```
+
+`VITE_REDDIT_REDIRECT_URI` is **optional**. Set it when you need strict host/port consistency across environments.
+
+### Server-Side (Secret)
+
+These remain private and are never exposed to the browser:
+
+```env .env
+REDDIT_CLIENT_ID=your_reddit_client_id
+REDDIT_CLIENT_SECRET=your_reddit_client_secret
+REDDIT_USER_AGENT="web:SubPirate:1.0.0 (by /u/yourusername)"
+REDDIT_REDIRECT_URI=http://localhost:5173/auth/reddit/callback
+```
+
+<Warning>
+  **Never** commit `.env` files to version control. Use `.env.example` as a template and add `.env` to `.gitignore`.
+</Warning>
+
+## Token Encryption
+
+Reddit refresh tokens are encrypted at rest using AES-256-GCM encryption. This protects tokens even if your database is compromised.
+
+### Generate Encryption Key
+
+Run this command to generate a secure 32-byte encryption key:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+Add the output to your environment variables:
+
+```env .env
+TOKEN_ENCRYPTION_KEY=your_base64_encoded_key_here
+```
+
+<Warning>
+  **Critical:** Never rotate or change `TOKEN_ENCRYPTION_KEY` in production without first decrypting and re-encrypting all existing tokens. Changing the key will invalidate all stored Reddit connections.
+</Warning>
+
+## OAuth Flow Implementation
+
+The exchange flow in `api/_lib/redditOAuthExchangeFlow.js` handles:
+
+### 1. Code Exchange
+
+Exchanges the authorization code for access and refresh tokens:
+
+```javascript
+const tokens = await exchangeRedditCode({ code, redirectUri });
+```
+
+### 2. User Identity Verification
+
+Fetches the authenticated user's Reddit profile:
+
+```javascript
+const me = await fetchRedditMe(tokens.access_token);
+```
+
+### 3. Subscription Check
+
+Verifies the user has an active subscription before allowing account connections:
+
+```javascript
+const subscription = await getUserSubscription(userId);
+if (!subscription?.isActive) {
+  return { error: 'subscription_required', upgrade_required: true };
+}
+```
+
+### 4. Token Encryption
+
+Encrypts tokens before storing in the database:
+
+```javascript
+const encryptedAccessToken = encryptString(tokens.access_token);
+const encryptedRefreshToken = encryptString(tokens.refresh_token);
+```
+
+### 5. Account Limit Enforcement
+
+Enforces per-plan limits on connected Reddit accounts:
+
+```javascript
+const maxAccounts = subscription.plan.max_reddit_accounts;
+const upsertAccount = await upsertAccountWithLimit({ accountPayload, maxAccounts });
+```
+
+If the limit is exceeded, users receive:
+```json
+{
+  "error": "quota_exceeded",
+  "feature": "reddit_accounts",
+  "limit": 3,
+  "upgrade_required": true
+}
+```
+
+## Reconnecting Accounts
+
+Users can reconnect existing Reddit accounts without counting against their quota. The flow verifies:
+
+1. The `reconnectAccountId` matches an existing account owned by the user
+2. The Reddit user ID from OAuth matches the stored account's Reddit user ID
+
+```javascript
+if (reconnectAccountId) {
+  const reconnectLookup = await findReconnectAccount({ userId, reconnectAccountId });
+  if (oauthUserId !== reconnectUserId) {
+    return { error: 'Reconnect requires the same Reddit account' };
+  }
+}
+```
+
+## Security Considerations
+
+<Warning>
+  **Token Storage:** Tokens are stored encrypted in the `reddit_account_tokens` table with Row Level Security (RLS) policies enforcing user isolation.
+</Warning>
+
+<Warning>
+  **Token Expiration:** Access tokens expire after 1 hour. The API automatically handles refresh token exchanges when needed.
+</Warning>
+
+<Warning>
+  **Scope Permissions:** SubPirate requests minimal Reddit scopes required for posting and analysis. Review scopes in the OAuth authorize request.
+</Warning>
+
+## Troubleshooting
+
+### "Invalid redirect_uri" Error
+
+**Cause:** Mismatch between registered Reddit app redirect URI and environment variables.
+
+**Solution:** Ensure `VITE_REDDIT_REDIRECT_URI` and `REDDIT_REDIRECT_URI` exactly match the URI registered in Reddit's app settings.
+
+### "Invalid token response from Reddit"
+
+**Cause:** Authorization code already used, expired, or client credentials mismatch.
+
+**Solution:** 
+- Verify `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` match your Reddit app
+- Check that authorization codes are only used once
+- Ensure system time is accurate (OAuth uses timestamps)
+
+### "Failed to encrypt Reddit tokens"
+
+**Cause:** Missing or invalid `TOKEN_ENCRYPTION_KEY`.
+
+**Solution:** Generate a new encryption key using the command above and add it to your `.env` file.
+
+## Database Schema
+
+### reddit_accounts Table
+
+Stores connected Reddit account metadata:
+
+```sql
+CREATE TABLE reddit_accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES profiles(user_id),
+  reddit_user_id TEXT NOT NULL,
+  username TEXT NOT NULL,
+  avatar_url TEXT,
+  karma_score INTEGER DEFAULT 0,
+  last_connected_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### reddit_account_tokens Table
+
+Stores encrypted OAuth tokens:
+
+```sql
+CREATE TABLE reddit_account_tokens (
+  reddit_account_id UUID PRIMARY KEY REFERENCES reddit_accounts(id),
+  user_id UUID NOT NULL REFERENCES profiles(user_id),
+  access_token_enc TEXT NOT NULL,
+  refresh_token_enc TEXT NOT NULL,
+  scope TEXT[],
+  token_expires_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+## Next Steps
+
+- [OpenRouter AI Integration](/integrations/openrouter-ai) - Enable subreddit analysis
+- [Stripe Billing](/integrations/stripe-billing) - Set up subscription plans
